@@ -3,6 +3,7 @@ package viewport
 import (
 	"io"
 	"log"
+	"moe/pkg/themes"
 	"os"
 	"path"
 	"strings"
@@ -11,8 +12,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Buffer represents an opened file.
-type Buffer struct {
+// buffer represents an opened file.
+type buffer struct {
 	path     string    // Absolute path on disk.
 	fd       *os.File  // File descriptor.
 	focused  bool      // Bool indicating if we are currently editing this buffer.
@@ -21,16 +22,8 @@ type Buffer struct {
 	content  *[][]rune // Actual raw text data. TODO: Piece Chain.
 }
 
-func (b *Buffer) Focus() {
-	b.focused = true
-}
-
-func (b *Buffer) Unfocus() {
-	b.focused = false
-}
-
 // String returns the string contained in this buffer
-func (b *Buffer) String() string {
+func (b *buffer) String() string {
 	content := b.content
 	if content == nil {
 		return ""
@@ -46,7 +39,8 @@ func (b *Buffer) String() string {
 	return sb.String()
 }
 
-func (b Buffer) GetName() string {
+// Name returns the title of the buffer window to display
+func (b buffer) Name() string {
 	if b.scratch {
 		return "[scratch]"
 	}
@@ -55,14 +49,16 @@ func (b Buffer) GetName() string {
 	return name
 }
 
-func newScratchBuffer() *Buffer {
-	tmp := [][]rune{{'a', 'b', 'c'}, {'\t', 'f', 'o', 'o'}}
-	return &Buffer{
-		path:    "",
-		fd:      nil,
-		focused: true,
-		scratch: true,
-		content: &tmp,
+// NewScratchBuffer creates a new Buffer with scratch set to true.
+// A scratch buffer can take any name.
+func NewScratchBuffer() *buffer {
+	return &buffer{
+		path:     "",
+		fd:       nil,
+		focused:  true,
+		scratch:  true,
+		modified: false,
+		content:  &[][]rune{{}},
 	}
 }
 
@@ -76,22 +72,6 @@ type RenderWindow struct {
 
 func NewRenderWindow() RenderWindow {
 	return RenderWindow{startRow: 0, height: 0}
-}
-
-func (w *RenderWindow) SetHeight(h int) {
-	w.height = h
-}
-
-func (w *RenderWindow) SetStart(s int) {
-	w.startRow = s
-}
-
-func (w *RenderWindow) GetHeight() int {
-	return w.height
-}
-
-func (w *RenderWindow) GetStart() int {
-	return w.startRow
 }
 
 func (w *RenderWindow) Apply(content [][]rune) string {
@@ -113,12 +93,14 @@ func (w *RenderWindow) Apply(content [][]rune) string {
 	return sb.String()
 }
 
-type cursor struct {
+type Cursor struct {
 	row, col int  // Location inside the text
 	thin     bool // Wether to render a thin cursor or not
 }
 
+// ViewportStyle describes the style of each element in the viewport
 type ViewportStyle struct {
+	colorPalette         themes.Base16Theme
 	cursorLine           lipgloss.Style
 	bufferLineBackground lipgloss.Style
 	bufferLineActive     lipgloss.Style
@@ -126,87 +108,160 @@ type ViewportStyle struct {
 	buffer               lipgloss.Style
 }
 
+// The bufferline is composed of a linked-list
+type BufferNode struct {
+	prev *BufferNode
+	next *BufferNode
+	buf  *buffer
+}
+
 type Model struct {
-	buffers                   []*Buffer
-	Cursor                    cursor
+	// Similar approach to the piece chain
+	head       *BufferNode
+	tail       *BufferNode
+	activeNode *BufferNode
+
+	Cursor                    Cursor
 	renderWindow              RenderWindow
 	style                     ViewportStyle
 	bufferWidth, bufferHeight int // Dimensions
 }
 
 func New() Model {
-	// scratch := newScratchBuffer()
-	test, _ := newBuffer("foo.go")
-	test.Focus()
+	scratch := NewScratchBuffer()
+	scratch.focused = true
 
-	// bgColor := lipgloss.Color("#1d2021")
-	// bgColorBufferline := lipgloss.Color("#928374")
-	// bgColorBufferline := lipgloss.Color("#1d2021")
-	base00 := lipgloss.Color("#1d2021") // Default Background
-	_ = base00
-	base01 := lipgloss.Color("#3c3836") // Lighter Background (Used for status bars, line number and folding marks)
-	_ = base01
-	base02 := lipgloss.Color("#504945") // Selection Background
-	_ = base02
-	base03 := lipgloss.Color("#665c54") // Comments, Invisibles, Line Highlighting
-	_ = base03
-	base04 := lipgloss.Color("#bdae93") // Dark Foreground (Used for status bars)
-	_ = base04
-	base05 := lipgloss.Color("#d5c4a1") // Default Foreground, Caret, Delimiters, Operators
-	_ = base05
-	base06 := lipgloss.Color("#ebdbb2") // Light Foreground (Not often used)
-	_ = base06
-	base07 := lipgloss.Color("#fbf1c7") // Light Background (Not often used)
-	_ = base07
-	base08 := lipgloss.Color("#fb4934") // Variables, XML Tags, Markup Link Text, Markup Lists, Diff Deleted
-	_ = base08
-	base09 := lipgloss.Color("#fe8019") // Integers, Boolean, Constants, XML Attributes, Markup Link Url
-	_ = base09
-	base0A := lipgloss.Color("#fabd2f") // Classes, Markup Bold, Search Text Background
-	_ = base0A
-	base0B := lipgloss.Color("#b8bb26") // Strings, Inherited Class, Markup Code, Diff Inserted
-	_ = base0B
-	base0C := lipgloss.Color("#8ec07c") // Support, Regular Expressions, Escape Characters, Markup Quotes
-	_ = base0C
-	base0D := lipgloss.Color("#83a598") // Functions, Methods, Attribute IDs, Headings
-	_ = base0D
-	base0E := lipgloss.Color("#d3869b") // Keywords, Storage, Selector, Markup Italic, Diff Changed
-	_ = base0E
-	base0F := lipgloss.Color("#d65d0e") // Deprecated, Opening/Closing Embedded Language Tags, e.g. <?php ?>
-	_ = base0F
+	// Loads the default theme. Note: in the future, default theme can be customizable
+	theme := themes.DefaultTheme()
 
 	defaultStyle := ViewportStyle{
-		cursorLine:           lipgloss.NewStyle().Background(base03),
-		bufferLineBackground: lipgloss.NewStyle().Background(base00),
-		bufferLineActive:     lipgloss.NewStyle().Padding(0, 1).AlignHorizontal(lipgloss.Left).Background(base00).Foreground(base05).Reverse(true),
-		bufferLineInactive:   lipgloss.NewStyle().Padding(0, 1).AlignHorizontal(lipgloss.Left).Background(base00).Foreground(base05).Reverse(false),
-		buffer:               lipgloss.NewStyle().AlignHorizontal(lipgloss.Left).Background(base00),
+		cursorLine:           lipgloss.NewStyle().Background(theme.Base03),
+		bufferLineBackground: lipgloss.NewStyle().Background(theme.Base00),
+		bufferLineActive:     lipgloss.NewStyle().Padding(0, 1).AlignHorizontal(lipgloss.Left).Background(theme.Base00).Foreground(theme.Base05).Reverse(true),
+		bufferLineInactive:   lipgloss.NewStyle().Padding(0, 1).AlignHorizontal(lipgloss.Left).Background(theme.Base00).Foreground(theme.Base05).Reverse(false),
+		buffer:               lipgloss.NewStyle().AlignHorizontal(lipgloss.Left).Background(theme.Base00),
 	}
 
-	// bLineBackground := lipgloss.NewStyle().Background(bgColorBufferline)
-	// bLineInactive := lipgloss.NewStyle().Padding(0, 1).AlignHorizontal(lipgloss.Left)
-	// bLineActive := bLineInactive.Copy().Reverse(true)
-	// bStyle := lipgloss.NewStyle().
-	// 	AlignHorizontal(lipgloss.Left)
-	// Background(bgColor)
+	nodeHead := &BufferNode{prev: nil, next: nil, buf: nil}
+	nodeTail := &BufferNode{prev: nil, next: nil, buf: nil}
+	nodeScratch := &BufferNode{prev: nodeHead, next: nodeTail, buf: scratch}
+	nodeHead.next = nodeScratch
+	nodeTail.prev = nodeScratch
 
 	return Model{
-		buffers:      []*Buffer{test},
+		head:         nodeHead,
+		tail:         nodeTail,
+		activeNode:   nodeScratch,
 		style:        defaultStyle,
-		Cursor:       cursor{0, 0, false}, // By default, we have a normal-mode thick cursor on the first character
+		Cursor:       Cursor{0, 0, false}, // By default, we have a normal-mode thick cursor on the first character
 		renderWindow: NewRenderWindow(),
 	}
 }
 
-// GetActiveBuffer returns a pointer to the currently active buffer.
-func (m *Model) GetActiveBuffer() *Buffer {
-	for _, b := range m.buffers {
-		if b.focused {
-			return b
+// FocusedBuffer returns a pointer to the currently focused buffer.
+func (m *Model) FocusedBuffer() *buffer {
+	for node := m.head.next; node != nil; node = node.next {
+		if node.buf.focused {
+			return node.buf
 		}
 	}
+
 	return nil
 }
+
+func newBuffer(path string) (*buffer, error) {
+	fd, err := os.OpenFile(path, os.O_RDWR, 0664) // taken from helix
+	if err != nil {
+		return nil, err
+	}
+
+	// Note: I don't close the file descriptor, as I will also write to it...
+	bytes, err := io.ReadAll(fd)
+	if err != nil {
+		return nil, err
+	}
+
+	s := string(bytes)
+	lines := strings.Split(s, "\n")
+	var content [][]rune
+	for _, line := range lines {
+		content = append(content, []rune(line))
+	}
+
+	return &buffer{
+		path:    path,
+		fd:      fd,
+		focused: false,
+		scratch: false,
+		content: &content,
+	}, nil
+}
+
+func (m Model) OpenBuffer(path string) (Model, tea.Cmd) {
+	// If the buffer is already open, just focus it.
+	for node := m.head.next; node.next != nil; node = node.next {
+		if node.buf.path == path {
+			m.activeNode.buf.focused = false
+			m.activeNode = node
+			m.activeNode.buf.focused = true
+
+			return m, nil
+		}
+	}
+
+	// Else, create a new buffer
+	buf, err := newBuffer(path)
+	if err != nil {
+		log.Fatalf("Error opening %s: %v\n", path, err)
+		// TODO: Launch an error message
+	}
+	// Create a node from the buffer and add it to the linked list
+	// (or replace the scratch buffer if not modified)
+	n := NewNode(buf)
+	if m.activeNode.buf.scratch && !m.activeNode.buf.modified {
+		ReplaceNode(m.activeNode, n)
+	} else {
+		InsertNode(m.tail, n)
+	}
+
+	// Change the active node
+	m.activeNode.buf.focused = false
+	m.activeNode = n
+	m.activeNode.buf.focused = true
+
+	return m, nil
+}
+
+func (m Model) CloseBuffer(path string) (Model, tea.Cmd) {
+	panic("Unimplemented")
+}
+
+// InsertNode inserts node `n` before node `src`
+func InsertNode(src *BufferNode, n *BufferNode) {
+	n.prev = src.prev
+	n.next = src
+	src.prev.next = n
+	src.prev = n
+}
+
+// ReplaceNode replaces node `old` with `new` in the Linked List
+func ReplaceNode(old *BufferNode, new *BufferNode) {
+	old.prev.next = new
+	old.next.prev = new
+	new.next = old.next
+	new.prev = old.prev
+}
+
+// NewNode takes a *buffer and returns a *BufferNode
+func NewNode(buf *buffer) *BufferNode {
+	return &BufferNode{
+		prev: nil,
+		next: nil,
+		buf:  buf,
+	}
+}
+
+/* The three ELM functions: Init, Update and View */
 
 func (m Model) Init() tea.Cmd {
 	// Just return `nil`, which means "no I/O right now, please."
@@ -218,93 +273,28 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.bufferWidth = msg.Width
 		m.bufferHeight = msg.Height - 3              // 2 lines for status bar and command bar and one for bufferline
-		m.renderWindow.SetHeight(m.bufferHeight - 1) // -1 line for bufferline
+		m.renderWindow.height = (m.bufferHeight - 1) // -1 line for bufferline
 	}
 	return m, nil
 }
-
-func newBuffer(path string) (*Buffer, error) {
-	fd, err := os.OpenFile(path, os.O_RDWR, 0664) // taken from helix
-	if err != nil {
-		return nil, err
-	}
-
-	bytes, err := io.ReadAll(fd)
-	if err != nil {
-		return nil, err
-	}
-	// Note: I don't close the file descriptor, as I will also write to it...
-
-	s := string(bytes)
-	lines := strings.Split(s, "\n")
-	var content [][]rune
-	for _, line := range lines {
-		content = append(content, []rune(line))
-		// content[i] = []rune(line)
-	}
-
-	return &Buffer{
-		path:    path,
-		fd:      fd,
-		focused: false,
-		scratch: false,
-		content: &content,
-	}, nil
-}
-
-func (m *Model) deactivateAll() {
-	for _, b := range m.buffers {
-		b.Unfocus()
-	}
-}
-
-func (m Model) OpenBuffer(path string) (Model, tea.Cmd) {
-	for _, b := range m.buffers {
-		if b.path == path {
-			m.deactivateAll()
-			b.Focus()
-
-			return m, nil
-		}
-	}
-
-	buf, err := newBuffer(path)
-	if err != nil {
-		log.Fatalf("Error opening %s: %v\n", path, err)
-		// TODO: Launch an error message
-	}
-	buf.Focus()
-	m.deactivateAll()
-	m.buffers = append(m.buffers, buf)
-
-	return m, nil
-}
-
-// Render the fg string over the bg string
-// func Overlay(bg string, fg string) string {
-// 	lipgloss.JoinHorizontal(lipgloss.Left, fg, bg)
-// 	// maxSize := max(len(bg), len(fg))
-
-// 	// var s string = make(string, maxSize)
-// 	return ""
-// }
 
 func (m Model) View() string {
 	var bufferLine string
 	var bufferText string
+
 	// 1. Render the bufferline buffers
-	for _, b := range m.buffers {
-		name := b.GetName()
-		if b.focused {
-			bufferLine += m.style.bufferLineActive.Render(name)
+	for node := m.head.next; node.next != nil; node = node.next {
+		if node.buf.focused {
+			bufferLine += m.style.bufferLineActive.Render(node.buf.Name())
 		} else {
-			bufferLine += m.style.bufferLineInactive.Render(name)
+			bufferLine += m.style.bufferLineInactive.Render(node.buf.Name())
 		}
 	}
+
 	// 1.1 Render the rest of the background TODO
 	bufferLine += m.style.bufferLineBackground.Width(m.bufferWidth - lipgloss.Width(bufferLine)).Render()
 	// 2. Render the text
-	activeBuffer := m.GetActiveBuffer()
+	activeBuffer := m.FocusedBuffer()
 	if activeBuffer != nil {
 		content := m.renderWindow.Apply(*activeBuffer.content) // Only display what we can see through the window
 		bufferText = m.style.buffer.Width(m.bufferWidth).Height(m.bufferHeight).Render(content)
