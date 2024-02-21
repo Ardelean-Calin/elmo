@@ -12,7 +12,7 @@ type SubmitMsg string
 
 // Decode the text, returning the action and its arguments (if any)
 func (m SubmitMsg) Decode() (string, []string) {
-	slices := strings.Split(string(m), " ")
+	slices := strings.Fields(string(m))
 	switch len(slices) {
 	case 0:
 		return "", nil

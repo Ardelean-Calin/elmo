@@ -8,31 +8,41 @@ import (
 )
 
 type Model struct {
-	text       string // The command input is a simple line of text
-	visible    bool
-	error      string
-	errorStyle lipgloss.Style
+	text          string // The command input is a simple line of text
+	focused       bool
+	error, status string
+	errorStyle    lipgloss.Style
 }
 
 func New() Model {
 	return Model{
 		text:       "",
-		visible:    false,
+		focused:    false,
 		error:      "",
+		status:     "",
 		errorStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("#ff0000")),
 	}
 }
 
-func (m *Model) SetVisible(v bool) {
-	m.visible = v
+func (m *Model) Focus() {
+	m.focused = true
+}
+
+func (m *Model) Blur() {
+	m.focused = false
+}
+
+func (m *Model) ShowStatus(status string) {
+	m.status = status
 }
 
 func (m *Model) ShowError(err string) {
 	m.error = err
 }
 
-func (m *Model) ClearError() {
+func (m *Model) Clear() {
 	m.error = ""
+	m.status = ""
 }
 
 func (m Model) Init() tea.Cmd {
@@ -42,6 +52,10 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
+	if !m.focused {
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.Type {
@@ -70,7 +84,9 @@ func (m Model) View() string {
 	var s string
 	if m.error != "" {
 		s += m.errorStyle.Render(m.error)
-	} else if m.visible {
+	} else if m.status != "" {
+		s += m.status
+	} else if m.focused {
 		s += ":" + m.text
 	}
 	return s

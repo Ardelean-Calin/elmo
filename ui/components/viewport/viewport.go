@@ -1,8 +1,10 @@
 package viewport
 
 import (
+	"fmt"
 	"io"
 	"moe/pkg/themes"
+	"moe/ui/components/viewport/render"
 	"os"
 	"path"
 	"strings"
@@ -11,69 +13,22 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// buffer represents an opened file.
-type buffer struct {
-	parentNode *BufferNode
+/* These two will be displayed in the status bar */
+type StatusMsg string
+type ErrorMsg error
 
-	cursor   Cursor    // Cursor position inside this buffer.
-	path     string    // Absolute path on disk.
-	fd       *os.File  // File descriptor.
-	modified bool      // Content was modified and not saved to disk
-	content  *[][]rune // Actual raw text data. TODO: Piece Chain.
-}
-
-// String returns the string contained in this buffer
-func (b *buffer) String() string {
-	content := b.content
-	if content == nil {
-		return ""
+// Return a status string. Will be displayed in the statusbar
+func StatusCmd(status string) tea.Cmd {
+	return func() tea.Msg {
+		return StatusMsg(status)
 	}
+}
 
-	var sb strings.Builder
-	for _, r := range *content {
-		for _, v := range r {
-			sb.WriteRune(v)
-		}
-		sb.WriteString("\n")
+// Return an error. Will be displayed in the statusbar
+func ErrorCmd(err error) tea.Cmd {
+	return func() tea.Msg {
+		return ErrorMsg(err)
 	}
-	return sb.String()
-}
-
-// Name returns the title of the buffer window to display
-func (b buffer) Name() string {
-	_, name := path.Split(b.path)
-	return name
-}
-
-// RenderWindow represents a rectangular window "sliding" over our text.
-// Let's keep it as simple as possible, it is a window where only the height can be changed.
-// Only the text that is inside the window gets rendered on screen.
-type RenderWindow struct {
-	startRow int
-	height   int
-}
-
-func NewRenderWindow() RenderWindow {
-	return RenderWindow{startRow: 0, height: 0}
-}
-
-func (w *RenderWindow) Apply(content [][]rune) string {
-	if content == nil {
-		return ""
-	}
-
-	var sb strings.Builder
-	for i, r := range content[w.startRow:] {
-		if i == w.height {
-			break
-		}
-
-		for _, v := range r {
-			sb.WriteRune(v)
-		}
-		sb.WriteString("\n")
-	}
-	return sb.String()
 }
 
 type Cursor struct {
@@ -91,28 +46,22 @@ type ViewportStyle struct {
 	buffer               lipgloss.Style
 }
 
-// The bufferline is composed of a linked-list
-type BufferNode struct {
-	prev *BufferNode
-	next *BufferNode
-	val  *buffer
-}
-
 type LinkedList struct {
 	head *BufferNode
 	tail *BufferNode
 }
 
-func (l *LinkedList) AddNode(node *BufferNode) {
+func (l *LinkedList) AddNode(node *BufferNode) *BufferNode {
 	InsertNode(l.tail, node)
+	return node
 }
 
 // FocusBuffer finds the node with the given path and focuses it.
 func (m *Model) FocusBuffer(path string) bool {
-	list := m.bufl
+	list := m.blist
 	for node := list.head.next; node.next != nil; node = node.next {
-		if node.val.path == path {
-			m.focusedBuffer = node.val
+		if node.buffer.path == path {
+			m.focusedNode = node
 
 			return true
 		}
@@ -122,11 +71,10 @@ func (m *Model) FocusBuffer(path string) bool {
 }
 
 type Model struct {
-	bufl          LinkedList // Buffer Linked List
-	focusedBuffer *buffer
+	blist       LinkedList  // Buffer Linked List
+	focusedNode *BufferNode // The currently active buffer
 
-	renderWindow              RenderWindow
-	style                     ViewportStyle
+	Style                     ViewportStyle
 	bufferWidth, bufferHeight int // Dimensions
 }
 
@@ -143,79 +91,113 @@ func New() Model {
 		buffer:               lipgloss.NewStyle().AlignHorizontal(lipgloss.Left).Background(theme.Base00),
 	}
 
-	nodeHead := &BufferNode{prev: nil, next: nil, val: nil}
-	nodeTail := &BufferNode{prev: nil, next: nil, val: nil}
+	// By default, we have an empty screen. TODO: add a scratch buffer
+	nodeHead := &BufferNode{prev: nil, next: nil, buffer: nil}
+	nodeTail := &BufferNode{prev: nil, next: nil, buffer: nil}
 	nodeHead.next = nodeTail
 	nodeTail.prev = nodeHead
 	list := LinkedList{head: nodeHead, tail: nodeTail}
 
 	return Model{
-		focusedBuffer: nil,
-		bufl:          list,
-		style:         defaultStyle,
-		renderWindow:  NewRenderWindow(),
+		focusedNode: nil,
+		blist:       list,
+		Style:       defaultStyle,
 	}
 }
 
-func newBuffer(path string) (*buffer, error) {
-	fd, err := os.OpenFile(path, os.O_RDWR, 0664) // taken from helix
-	if err != nil {
-		return nil, err
+// WriteBuffer saves the currently focused buffer to disk.
+func (m *Model) WriteBuffer() tea.Cmd {
+	node := m.focusedNode
+	if node == nil {
+		return ErrorCmd(fmt.Errorf("Unknown error"))
 	}
 
-	// Note: I don't close the file descriptor, as I will also write to it...
-	bytes, err := io.ReadAll(fd)
-	if err != nil {
-		return nil, err
+	if node.buffer.path == "" {
+		return ErrorCmd(fmt.Errorf("No write path specified"))
 	}
 
+	if node.buffer.fd == nil {
+		return ErrorCmd(fmt.Errorf("Unimplemented"))
+	}
+
+	_, err := node.buffer.fd.WriteString(node.buffer.String())
+	if err != nil {
+		return ErrorCmd(err)
+	}
+	node.buffer.modified = false
+
+	return nil
+}
+
+// findBuffer searches the linked list and returns the BufferNode
+func (m *Model) findBuffer(bPath string) (node *BufferNode) {
+	for node := m.blist.head.next; node.next != nil; node = node.next {
+		if node.buffer.path == bPath {
+			return node
+		}
+	}
+
+	return nil
+}
+
+// OpenBuffer takes in a list of paths and opens the files for editing.
+func (m *Model) OpenBuffer(paths ...string) tea.Cmd {
+	var cmds []tea.Cmd
+	for _, p := range paths {
+		cmd := m.openBuffer(p)
+		cmds = append(cmds, cmd)
+	}
+
+	return tea.Batch(cmds...)
+}
+
+// openBuffer is the internal function of viewport.Model that only handles one buffer.
+func (m *Model) openBuffer(bname string) tea.Cmd {
+	var bytes []byte
+
+	// Check if buffer already is open and focus it
+	if m.FocusBuffer(bname) {
+		// We already had the buffer opened and focused it.
+		return nil
+	}
+
+	// Else create a new buffer
+	fd, err := os.OpenFile(bname, os.O_RDWR, 0664) // taken from helix
+	if err == nil {
+		// File doesn't exist
+		bytes, err = io.ReadAll(fd)
+		if err != nil {
+			// Some weird error happened. Display it.
+			return ErrorCmd(err)
+		}
+	}
+
+	// Ok by this point I either have a fd with some bytes or a nil fd and nil bytes
 	s := string(bytes)
-	lines := strings.Split(s, "\n")
 	var content [][]rune
-	for _, line := range lines {
+	for _, line := range strings.Split(s, "\n") {
 		content = append(content, []rune(line))
 	}
 
-	return &buffer{
+	// Create a new buffer and add it to our linked-list
+	b := buffer{
 		parentNode: nil,
-		path:       path,
+		cursor:     Cursor{0, 0, false},
+		path:       bname,
 		fd:         fd,
-		content:    &content,
 		modified:   false,
-		cursor: Cursor{
-			row:  0,
-			col:  0,
-			thin: false,
-		},
-	}, nil
-}
-
-// InsertNode inserts node `n` before node `src`
-func InsertNode(src *BufferNode, n *BufferNode) {
-	n.prev = src.prev
-	n.next = src
-	src.prev.next = n
-	src.prev = n
-}
-
-// ReplaceNode replaces node `old` with `new` in the Linked List
-func ReplaceNode(old *BufferNode, new *BufferNode) {
-	old.prev.next = new
-	old.next.prev = new
-	new.next = old.next
-	new.prev = old.prev
-}
-
-// NewNode takes a *buffer and returns a *BufferNode
-func NewNode(buf *buffer) *BufferNode {
-	node := BufferNode{
-		prev: nil,
-		next: nil,
-		val:  buf,
+		content:    &content,
+		window:     render.NewRenderWindow(),
 	}
-	buf.parentNode = &node
-	return &node
+
+	node := m.blist.AddNode(Node(&b))
+	m.focusedNode = node
+
+	return nil
 }
+
+// func (m * Model) NewBuffer(bname string) tea{}
+// func (m * Model) NewBuffer(bname string) {}
 
 /* The three ELM functions: Init, Update and View */
 
@@ -230,30 +212,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.bufferWidth = msg.Width
-		m.bufferHeight = msg.Height - 3              // 2 lines for status bar and command bar and one for bufferline
-		m.renderWindow.height = (m.bufferHeight - 1) // -1 line for bufferline
-	case MsgOpenBuffer:
-		path := string(msg)
-		// Try and switch to that buffer if it is loaded already
-		if m.FocusBuffer(path) {
-			return m, nil
+		m.bufferHeight = msg.Height - 3 // 2 lines for status bar and command bar and one for bufferline
+		for node := m.blist.head.next; node.next != nil; node = node.next {
+			node.buffer.window.Height = (m.bufferHeight - 1)
 		}
-
-		// If not, create a new buffer
-		buf, err := newBuffer(path)
-		if err != nil {
-			return m, func() tea.Msg { return MsgError(err) }
-		}
-
-		node := NewNode(buf)
-		m.bufl.AddNode(node)
-		m.FocusBuffer(path) // Not that efficient, but fine unless you have 1M buffers open
-	case MsgCloseBuffers:
-		// bufs := []string(msg)
-		// for _, buf := range bufs {
-		// 	// cmd = m.closeBuf(buf, false)
-		// }
-
 	}
 	return m, cmd
 }
@@ -263,26 +225,26 @@ func (m Model) View() string {
 	var bufferText string
 
 	// 1. Render the bufferline buffers
-	for node := m.bufl.head.next; node.next != nil; node = node.next {
-		if node == m.focusedBuffer.parentNode {
-			bufferLine += m.style.bufferLineActive.Render(node.val.Name())
+	for node := m.blist.head.next; node.next != nil; node = node.next {
+		if node == m.focusedNode {
+			bufferLine += m.Style.bufferLineActive.Render(node.buffer.Name())
 		} else {
-			bufferLine += m.style.bufferLineInactive.Render(node.val.Name())
+			bufferLine += m.Style.bufferLineInactive.Render(node.buffer.Name())
 		}
 	}
 
 	// 1.1 Render the rest of the background TODO
-	bufferLine += m.style.bufferLineBackground.Width(m.bufferWidth - lipgloss.Width(bufferLine)).Render()
+	bufferLine += m.Style.bufferLineBackground.Width(m.bufferWidth - lipgloss.Width(bufferLine)).Render()
 	// 2. Render the text
-	activeBuffer := m.focusedBuffer
-	if activeBuffer != nil {
-		content := m.renderWindow.Apply(*activeBuffer.content) // Only display what we can see through the window
-		bufferText = m.style.buffer.Width(m.bufferWidth).Height(m.bufferHeight).Render(content)
+	if m.focusedNode != nil {
+		content := m.focusedNode.buffer.String()
+		m.focusedNode.buffer.window.SetContent(content)
+		bufferText = m.Style.buffer.Width(m.bufferWidth).Height(m.bufferHeight).Render(m.focusedNode.buffer.window.View())
 	}
 
 	// 3. Render the cursor... How?
 	// lipgloss.Place(1, 1, )
-	bufferText = m.style.buffer.Height(m.bufferHeight).Render(bufferText)
+	bufferText = m.Style.buffer.Height(m.bufferHeight).Render(bufferText)
 
 	// 4. Sum everything up
 	s := lipgloss.JoinVertical(lipgloss.Left, bufferLine, bufferText)

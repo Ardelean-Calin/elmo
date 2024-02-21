@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"moe/ui/components/footer"
 	"moe/ui/components/statusbar"
-	"moe/ui/components/viewport"
+	"moe/ui/components/textarea"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,7 +19,7 @@ import (
 // - bufferline, statusbar, footer and main view
 // - no helptext
 // - Helix keybindings
-// - no themes
+// - no themes - actually, some themes maybe :D
 
 // Editor mode
 type Mode int
@@ -46,18 +47,19 @@ func SwitchMode(mode Mode) tea.Cmd {
 // Model of Moe
 type Model struct {
 	// UI elements
-	viewport  viewport.Model
+	textarea  textarea.Model
 	statusbar statusbar.Model
-	footer    footer.Model
+	footer    footer.Model // Command bar + error and status messages
 	// Internal data
 	currentMode Mode // Current editor mode
 }
 
 func initialModel() Model {
 	return Model{
-		viewport:  viewport.New(),
-		statusbar: statusbar.New(),
-		footer:    footer.New(),
+		textarea:    textarea.New(),
+		statusbar:   statusbar.New(),
+		footer:      footer.New(),
+		currentMode: Normal,
 	}
 }
 
@@ -73,32 +75,27 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
 	// Window was resized
 	case tea.WindowSizeMsg:
-		m.viewport, cmd = m.viewport.Update(msg)
-		// m.statusbar, cmd = m.statusbar.Update(msg)
-		// m.footer, cmd = m.footer.Update(msg)
-		// TODO: Move in ResizeHandler() function
+		m.textarea.Width = msg.Width
+		m.textarea.Height = msg.Height - 2
+		m.statusbar.Width = msg.Width
+		log.Printf("Screen size changed - h: %d w: %d", msg.Height, msg.Width)
 
 	case tea.KeyMsg:
-		m.footer.ClearError()
+		m.footer.Clear()
 
 		key := msg.String()
 		if m.currentMode == Command { // Handle command mode
-			// Pass the input to the command window
-			m.footer, cmd = m.footer.Update(msg)
-
 			// Exit command mode
 			if key == "esc" {
 				cmd = SwitchMode(Normal)
 			}
 		} else if m.currentMode == Insert { // Handle insert mode
-			// Pass the input to the viewport
-			m.viewport, cmd = m.viewport.Update(msg)
-
 			// Exit insert mode
 			if key == "esc" {
 				cmd = SwitchMode(Normal)
@@ -116,7 +113,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if key == "v" {
 				cmd = SwitchMode(Select)
 			} else {
-				m.viewport, cmd = m.viewport.Update(msg)
+				// m.viewport, cmd = m.viewport.Update(msg)
 			}
 		}
 		// TODO. Just for now so I can quit. Remove
@@ -134,29 +131,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case footer.CancelMsg:
 		cmd = SwitchMode(Normal)
 
-	// The command line has the following messages which need to be handled.
-	// It also has some internal messages which do not need to be handled by the main loop.
+	// Switched to a new buffer
+	case textarea.EvtBufferSwitched:
+		m.statusbar.SetOpenBuffer(m.textarea.CurrentBuffer())
+
+	// Received an error
+	case textarea.ErrorMsg:
+		m.footer.ShowError(msg.Error())
+
+	// Received a status message
+	case textarea.StatusMsg:
+		m.footer.ShowStatus(string(msg))
+
 	// An "open a new buffer" message was received
 	case OpenBufferMsg:
 		path := string(msg)
-		m.viewport, cmd = m.viewport.Update(viewport.MsgOpenBuffer(path))
-	// path := string(msg)
-	// buffer := newBuffer(path)
-	// // Set all other buffers as inactive
-	// for _, b := range m.buffers {
-	// 	b.active = false
-	// }
-	// m.buffers = append(m.buffers, buffer)
-	// m.header.SetBuffers(m.buffers...)
-	// m.header, _ = m.header.Update(msg)
-
-	// case footer.CloseBufferMsg:
-	// bufName := string(msg)
-	// for i, b := range m.buffers {
-	// 	if b.GetName() == bufName {
-	// 		m.buffers = slices.Delete(m.buffers, i, i+1)
-	// 	}
-	// }
+		cmd = m.textarea.OpenBuffer(path)
 
 	// A mode switch was selected.
 	case ModeSwitchMsg:
@@ -166,25 +156,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch Mode(msg) {
 		case Insert:
 			// Do stuff, for example, enable absolute line mode in the editor
+			m.textarea.Focused = true
+			m.statusbar.InsertMode()
 		case Normal:
-			m.footer.SetVisible(false)
+			m.footer.Blur()
+			m.statusbar.NormalMode()
+			m.textarea.Focused = false
 		case Select:
+			m.statusbar.SelectMode()
 		case Command:
-			m.footer.SetVisible(true)
+			m.footer.Focus()
 		}
 
 	// Handle errors
 	case DisplayErrorMsg:
 		m.footer.ShowError(string(msg))
 	}
+	cmds = append(cmds, cmd)
 
-	return m, cmd
+	// Send all events to each of the components. If they are focused they might react.
+	m.textarea, cmd = m.textarea.Update(msg)
+	cmds = append(cmds, cmd)
+	m.footer, cmd = m.footer.Update(msg)
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) View() string {
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
-		m.viewport.View(),
+		m.textarea.View(),
 		m.statusbar.View(),
 		m.footer.View())
 	// TODO: I can enhance the experience with pop-ups which render **over** the text I got above.
