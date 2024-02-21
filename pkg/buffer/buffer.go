@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"io"
+	"moe/pkg/common"
 	"moe/ui/components/cursor"
 	"os"
 	"path"
@@ -115,7 +116,6 @@ type LinkedList struct {
 }
 
 func NewList() LinkedList {
-
 	head := &BufferNode{
 		Prev:   nil,
 		Next:   nil,
@@ -135,19 +135,47 @@ func NewList() LinkedList {
 	}
 }
 
-func (l *LinkedList) Iter() func(func(*BufferNode) bool) {
-	return func(yield func(*BufferNode) bool) {
-		for node := l.head.Next; node.Next != nil; node = node.Next {
-			if !yield(node) {
-				return
-			}
-		}
-	}
-}
-
 func (l *LinkedList) AddNode(n *BufferNode) {
 	n.Prev = l.tail.Prev
 	n.Next = l.tail
 	l.tail.Prev.Next = n
 	l.tail.Prev = n
 }
+
+// NodeIterator implements the Iterator interface for LinkedList
+type NodeIterator struct {
+	n *BufferNode
+}
+
+// HasNext tells us wether the iterator still has elements to consume
+func (i *NodeIterator) HasNext() bool {
+	next := i.n.Next
+	// Only tail nodes have next equal to nil
+	return next.Next != nil
+}
+
+// Next gets the next element in this iterator
+func (i *NodeIterator) Next() *BufferNode {
+	if i.HasNext() {
+		node := i.n.Next
+		i.n = node
+		return i.n
+	}
+	return nil
+}
+
+// Creates an iterator over the LinkedList elements
+func (l *LinkedList) Iter() common.Iterator[BufferNode] {
+	return &NodeIterator{n: l.head}
+}
+
+/* Use this when GOEXPERIMENT=rangefunc is merged */
+// func (l *LinkedList) Iter() func(func(*BufferNode) bool) {
+// 	return func(yield func(*BufferNode) bool) {
+// 		for node := l.head.Next; node.Next != nil; node = node.Next {
+// 			if !yield(node) {
+// 				return
+// 			}
+// 		}
+// 	}
+// }

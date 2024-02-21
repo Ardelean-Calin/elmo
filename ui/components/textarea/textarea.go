@@ -61,7 +61,9 @@ func (m *Model) CurrentBuffer() string {
 
 // SwitchBuffer tries to switch to the given buffer. Returns false if buffer doesn't exist
 func (m *Model) SwitchBuffer(path string) bool {
-	for node := range m.buffers.Iter() {
+	iterator := m.buffers.Iter()
+	for iterator.HasNext() {
+		node := iterator.Next()
 		if node.Buffer.Path == path {
 			m.activeNode = node
 			return true
@@ -113,8 +115,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 func (m Model) View() string {
 	bufferline := ""
-	// NOTE: needs GOEXPERIMENT=rangefunc as of Go 1.22
-	for node := range m.buffers.Iter() {
+
+	iterator := m.buffers.Iter()
+	for iterator.HasNext() {
+		node := iterator.Next()
 		style := lipgloss.NewStyle().Padding(0, 1)
 		if node == m.activeNode {
 			style = style.Reverse(true)
