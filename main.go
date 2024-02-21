@@ -139,7 +139,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// An "open a new buffer" message was received
 	case OpenBufferMsg:
 		path := string(msg)
-		m.viewport, cmd = m.viewport.OpenBuffer(path)
+		m.viewport, cmd = m.viewport.Update(viewport.MsgOpenBuffer(path))
 	// path := string(msg)
 	// buffer := newBuffer(path)
 	// // Set all other buffers as inactive
