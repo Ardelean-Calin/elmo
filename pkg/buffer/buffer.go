@@ -3,21 +3,21 @@ package buffer
 import (
 	"io"
 	"moe/pkg/common"
+	"moe/pkg/gapbuffer"
 	"moe/ui/components/cursor"
 	"os"
 	"path"
-	"strings"
 )
 
 // Buffer represents an opened file.
 type Buffer struct {
 	parentNode *BufferNode
 
-	Path     string       // Absolute path on disk.
-	fd       *os.File     // File descriptor.
-	val      *[][]rune    // Actual raw text data. TODO: Piece Chain.
-	modified bool         // Content was modified and not saved to disk
-	cursor   cursor.Model // Cursor position inside this buffer.
+	Path     string               // Absolute path on disk.
+	fd       *os.File             // File descriptor.
+	val      *gapbuffer.GapBuffer // Actual raw text data. Gap Buffer is a nice compromise between Piece Chain and buffer.
+	modified bool                 // Content was modified and not saved to disk
+	cursor   cursor.Model         // Cursor position inside this buffer.
 }
 
 // NewBuffer constructs a new buffer from a path. If that file exists, it opens it for reading,
@@ -37,16 +37,13 @@ func NewBuffer(path string) (*Buffer, error) {
 
 	// Ok by this point I either have a fd with some bytes or a nil fd and nil bytes
 	s := string(bytes)
-	var content [][]rune
-	for _, line := range strings.Split(s, "\n") {
-		content = append(content, []rune(line))
-	}
+	buf := gapbuffer.New().WithContent(s)
 
 	return &Buffer{
 		parentNode: nil,
 		Path:       path,
 		fd:         fd,
-		val:        &content,
+		val:        &buf,
 		modified:   false,
 		cursor:     cursor.New(),
 	}, nil
@@ -60,14 +57,7 @@ func (b *Buffer) String() string {
 		return ""
 	}
 
-	var sb strings.Builder
-	for _, r := range *content {
-		for _, v := range r {
-			sb.WriteRune(v)
-		}
-		sb.WriteString("\n")
-	}
-	return sb.String()
+	return b.val.String()
 }
 
 // Name returns the title of the buffer window to display
