@@ -3,29 +3,29 @@ package gapbuffer
 import "testing"
 
 func TestBasic(t *testing.T) {
-	content := "Hello"
-	buf := New().WithContent(content)
-	if len(buf.buffer) != 5 {
+	content := []rune("Hello")
+	buf := New(content)
+	if buf.TotalLen() != 5 {
 		t.Fatalf("Gap buffer not initialized correctly.")
 	}
 	want := "Hello"
-	if buf.String() != want {
-		t.Fatalf("buf.String() failed. expected: %s, got: %s", want, buf.String())
+	if string(buf.Collect()) != want {
+		t.Fatalf("buf.String() failed. expected: %s, got: %s", want, string(buf.Collect()))
 	}
 
-	buf.InsertString("Boo! ")
+	buf.InsertElements([]rune("Boo! "))
 	want = "Boo! Hello"
-	if buf.String() != want {
-		t.Fatalf("InsertString failed. expected: %s, got: %s", want, buf.String())
+	if string(buf.Collect()) != want {
+		t.Fatalf("InsertElements failed. expected: %s, got: %s", want, string(buf.Collect()))
 	}
-	if len(buf.buffer) != 10 {
-		t.Fatalf("Gap buffer length - expected: %d, got %d", 10, len(buf.buffer))
+	if buf.TotalLen() != 10 {
+		t.Fatalf("Gap buffer length - expected: %d, got %d", 10, buf.TotalLen())
 	}
 }
 
 func TestCursor(t *testing.T) {
-	content := "Hello World!"
-	b := New().WithContent(content)
+	content := []rune("Hello World!")
+	b := New(content)
 	want := "Hello, World. My name is Calin."
 
 	b.CursorRight()
@@ -43,9 +43,9 @@ func TestCursor(t *testing.T) {
 	b.CursorRight()
 	b.Delete()
 	b.Insert('.')
-	b.InsertString(" My name is Calin.")
+	b.InsertElements([]rune(" My name is Calin."))
 
-	got := b.String()
+	got := string(b.Collect())
 	if got != want {
 		t.Fatalf("Cursor test failed. expected: %s, got %s", want, got)
 	}
@@ -53,12 +53,12 @@ func TestCursor(t *testing.T) {
 }
 
 func TestCursorBounds(t *testing.T) {
-	b := New()
+	b := New([]rune{})
 	b.CursorLeft()
-	b.InsertString("Oi!")
+	b.InsertElements([]rune("Oi!"))
 
 	want := "Oi!"
-	got := b.String()
+	got := string(b.Collect())
 	if got != want {
 		t.Fatalf("Cursor Bounds Test failed. expected: %s, got %s", want, got)
 	}
@@ -71,27 +71,27 @@ func TestCursorBounds(t *testing.T) {
 	b.CursorLeft()
 	b.CursorLeft()
 	b.CursorLeft()
-	b.InsertString("1) ")
+	b.InsertElements([]rune("1) "))
 
 	want = "1) Oi!"
-	got = b.String()
+	got = string(b.Collect())
 	if got != want {
 		t.Fatalf("Cursor Bounds Test failed. expected: %s, got %s", want, got)
 	}
 }
 
 func TestRuneAt(t *testing.T) {
-	b := New().WithContent("Test")
-	if b.RuneAt(0) != 'T' {
+	b := New([]rune("Test"))
+	if b.ElementAt(0) != 'T' {
 		t.FailNow()
 	}
-	if b.RuneAt(1) != 'e' {
+	if b.ElementAt(1) != 'e' {
 		t.FailNow()
 	}
-	if b.RuneAt(2) != 's' {
+	if b.ElementAt(2) != 's' {
 		t.FailNow()
 	}
-	if b.RuneAt(3) != 't' {
+	if b.ElementAt(3) != 't' {
 		t.FailNow()
 	}
 }

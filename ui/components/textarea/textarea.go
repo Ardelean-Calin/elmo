@@ -103,6 +103,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.Viewport.Width = msg.Width
 		m.Viewport.Height = msg.Height - 3
+	case tea.KeyMsg:
+		if msg.String() == "l" {
+			m.CurBuf.CursorRight()
+		}
+		if msg.String() == "h" {
+			m.CurBuf.CursorLeft()
+		}
 	default:
 		if !m.Focused {
 			return m, nil

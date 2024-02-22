@@ -13,11 +13,11 @@ import (
 type Buffer struct {
 	parentNode *BufferNode
 
-	Path     string               // Absolute path on disk.
-	fd       *os.File             // File descriptor.
-	val      *gapbuffer.GapBuffer // Actual raw text data. Gap Buffer is a nice compromise between Piece Chain and buffer.
-	modified bool                 // Content was modified and not saved to disk
-	Cursor   cursor.Model         // Cursor position inside this buffer.
+	Path     string                     // Absolute path on disk.
+	fd       *os.File                   // File descriptor.
+	val      *gapbuffer.GapBuffer[rune] // Actual raw text data. Gap Buffer is a nice compromise between Piece Chain and buffer.
+	modified bool                       // Content was modified and not saved to disk
+	Cursor   cursor.Model               // Cursor position inside this buffer.
 }
 
 // NewBuffer constructs a new buffer from a path. If that file exists, it opens it for reading,
@@ -36,8 +36,8 @@ func NewBuffer(path string) (*Buffer, error) {
 	}
 
 	// Ok by this point I either have a fd with some bytes or a nil fd and nil bytes
-	s := string(bytes)
-	buf := gapbuffer.New().WithContent(s)
+	content := []rune(string(bytes))
+	buf := gapbuffer.New(content)
 
 	return &Buffer{
 		parentNode: nil,
@@ -57,13 +57,27 @@ func (b *Buffer) String() string {
 		return ""
 	}
 
-	return b.val.String()
+	return string(b.val.Collect())
 }
 
 // Name returns the title of the buffer window to display
 func (b Buffer) Name() string {
 	_, name := path.Split(b.Path)
 	return name
+}
+
+func (b *Buffer) CursorRight() {
+	pos := min(b.Cursor.Pos+1, b.val.Len())
+	char := b.val.ElementAt(pos)
+	b.Cursor.Char = string(char)
+	b.Cursor.Pos = pos
+}
+
+func (b *Buffer) CursorLeft() {
+	pos := max(b.Cursor.Pos-1, 0)
+	char := b.val.ElementAt(pos)
+	b.Cursor.Char = string(char)
+	b.Cursor.Pos = pos
 }
 
 // The bufferline is composed of a linked-list

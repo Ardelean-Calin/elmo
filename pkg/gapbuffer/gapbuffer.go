@@ -5,38 +5,35 @@ import (
 )
 
 // Gap Buffer implementation. See: https://routley.io/posts/gap-buffer
-type GapBuffer struct {
-	buffer   []rune
-	gapStart int
-	gapEnd   int
+type GapBuffer[T any] struct {
+	buffer   []T // NOTE: In the future I might want this to be a pointer. I avoided this for now as it looked ugly
+	gapStart int // Index of the first character *in* the gap
+	gapEnd   int // Index of the first character *after* the gap
 }
 
-func New() GapBuffer {
-	return GapBuffer{
-		buffer:   []rune{},
+// New creates a new gapbuffer and populates it with content
+func New[T any](content []T) GapBuffer[T] {
+	return GapBuffer[T]{
+		buffer:   content,
 		gapStart: 0,
 		gapEnd:   0,
 	}
 }
 
-func (b GapBuffer) WithContent(content string) GapBuffer {
-	b.buffer = []rune(content)
-	// No gap for now
-	b.gapStart = 0 // Index of the first character *in* the gap
-	b.gapEnd = 0   // Index of the first character *after* the gap
-
-	return b
+// Collect returns a slice of the content of the gap buffer, without gap
+func (b *GapBuffer[T]) Collect() []T {
+	var dest []T
+	dest = append(dest, b.buffer[:b.gapStart]...)
+	dest = append(dest, b.buffer[b.gapEnd:]...)
+	return dest
 }
 
-func (b *GapBuffer) String() string {
-	return string(b.buffer[:b.gapStart]) + string(b.buffer[b.gapEnd:])
-}
-
-func (b *GapBuffer) gapSize() int {
+// gapSize returns the gap size
+func (b *GapBuffer[T]) gapSize() int {
 	return b.gapEnd - b.gapStart
 }
 
-func (b *GapBuffer) growGap() {
+func (b *GapBuffer[T]) growGap() {
 	// Gap size should be up to 5% of the total buffer size, but at least 64 bytes.
 	// I've taken this from https://shorturl.at/FKOUZ
 	gapSize := max(len(b.buffer)/20, 64)
@@ -44,7 +41,7 @@ func (b *GapBuffer) growGap() {
 	if flag.Lookup("test.v") != nil {
 		gapSize = 5
 	}
-	newBuffer := make([]rune, len(b.buffer)+gapSize)
+	newBuffer := make([]T, len(b.buffer)+gapSize)
 
 	copy(newBuffer, b.buffer[:b.gapStart])
 	copy(newBuffer[b.gapEnd+gapSize:], b.buffer[b.gapEnd:])
@@ -54,12 +51,17 @@ func (b *GapBuffer) growGap() {
 }
 
 // Len returns the size of the raw text
-func (b *GapBuffer) Len() int {
+func (b *GapBuffer[T]) Len() int {
 	return len(b.buffer) - b.gapSize()
 }
 
-// RuneAt returns the rune character at the given position.
-func (b *GapBuffer) RuneAt(pos int) rune {
+// TotalLen returns the total length of the gap buffer (including gaps)
+func (b *GapBuffer[T]) TotalLen() int {
+	return len(b.buffer)
+}
+
+// ElementAt returns the element at the given position.
+func (b *GapBuffer[T]) ElementAt(pos int) T {
 	if pos > b.gapStart && b.gapSize() != 0 {
 		pos = (b.gapStart - pos) + b.gapEnd
 	}
@@ -68,12 +70,12 @@ func (b *GapBuffer) RuneAt(pos int) rune {
 }
 
 // CursorGoto moves the cursor to the given position
-func (b *GapBuffer) CursorGoto(pos int) {
+func (b *GapBuffer[T]) CursorGoto(pos int) {
 	panic("Unimplemented")
 }
 
 // CursorRight moves the cursor left one character.
-func (b *GapBuffer) CursorLeft() {
+func (b *GapBuffer[T]) CursorLeft() {
 	// We are already at the start!
 	if b.gapStart == 0 {
 		return
@@ -87,7 +89,7 @@ func (b *GapBuffer) CursorLeft() {
 }
 
 // CursorRight moves the cursor right one character.
-func (b *GapBuffer) CursorRight() {
+func (b *GapBuffer[T]) CursorRight() {
 	// We are already at the end!
 	if b.gapEnd == len(b.buffer) {
 		return
@@ -99,26 +101,25 @@ func (b *GapBuffer) CursorRight() {
 	b.gapEnd++
 }
 
-// InsertString inserts a string at the current cursor position.
-func (b *GapBuffer) InsertString(s string) {
-	runes := []rune(s)
-	for _, r := range runes {
-		b.Insert(r)
+// InsertElements inserts a slice of T at the current cursor position.
+func (b *GapBuffer[T]) InsertElements(elements []T) {
+	for _, el := range elements {
+		b.Insert(el)
 	}
 }
 
-// Insert inserts a single character at the current cursor position.
-func (b *GapBuffer) Insert(c rune) {
+// Insert inserts a single element at the current cursor position.
+func (b *GapBuffer[T]) Insert(el T) {
 	if b.gapSize() == 0 {
 		b.growGap()
 	}
 
-	b.buffer[b.gapStart] = c
+	b.buffer[b.gapStart] = el
 	b.gapStart++
 }
 
 // Delete deletes the character at the current cursor position.
-func (b *GapBuffer) Delete() {
+func (b *GapBuffer[T]) Delete() {
 	if b.gapStart == 0 {
 		return
 	}
