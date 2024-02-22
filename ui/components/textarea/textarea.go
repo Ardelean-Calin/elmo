@@ -2,6 +2,7 @@ package textarea
 
 import (
 	"moe/pkg/buffer"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -128,7 +129,17 @@ func (m Model) View() string {
 	}
 
 	if m.activeNode != nil {
-		m.Viewport.SetContent(m.activeNode.Buffer.String())
+		var sb strings.Builder
+		var runes []rune = []rune(m.activeNode.Buffer.String())
+		for i, r := range runes {
+			if i == m.activeNode.Buffer.Cursor.Pos {
+				m.activeNode.Buffer.Cursor.Char = string(r)
+				sb.WriteString(m.activeNode.Buffer.Cursor.View())
+			} else {
+				sb.WriteRune(r)
+			}
+		}
+		m.Viewport.SetContent(sb.String())
 	} else {
 		m.Viewport.SetContent("")
 	}

@@ -53,6 +53,11 @@ func (b *GapBuffer) growGap() {
 	b.gapEnd = b.gapStart + gapSize
 }
 
+// CursorGoto moves the cursor to the given position
+func (b *GapBuffer) CursorGoto(pos int) {
+	panic("Unimplemented")
+}
+
 // CursorRight moves the cursor left one character.
 func (b *GapBuffer) CursorLeft() {
 	// We are already at the start!

@@ -17,7 +17,7 @@ type Buffer struct {
 	fd       *os.File             // File descriptor.
 	val      *gapbuffer.GapBuffer // Actual raw text data. Gap Buffer is a nice compromise between Piece Chain and buffer.
 	modified bool                 // Content was modified and not saved to disk
-	cursor   cursor.Model         // Cursor position inside this buffer.
+	Cursor   cursor.Model         // Cursor position inside this buffer.
 }
 
 // NewBuffer constructs a new buffer from a path. If that file exists, it opens it for reading,
@@ -45,7 +45,7 @@ func NewBuffer(path string) (*Buffer, error) {
 		fd:         fd,
 		val:        &buf,
 		modified:   false,
-		cursor:     cursor.New(),
+		Cursor:     cursor.New(),
 	}, nil
 
 }
