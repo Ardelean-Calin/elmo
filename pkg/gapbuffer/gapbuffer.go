@@ -53,6 +53,20 @@ func (b *GapBuffer) growGap() {
 	b.gapEnd = b.gapStart + gapSize
 }
 
+// Len returns the size of the raw text
+func (b *GapBuffer) Len() int {
+	return len(b.buffer) - b.gapSize()
+}
+
+// RuneAt returns the rune character at the given position.
+func (b *GapBuffer) RuneAt(pos int) rune {
+	if pos > b.gapStart && b.gapSize() != 0 {
+		pos = (b.gapStart - pos) + b.gapEnd
+	}
+
+	return b.buffer[pos]
+}
+
 // CursorGoto moves the cursor to the given position
 func (b *GapBuffer) CursorGoto(pos int) {
 	panic("Unimplemented")

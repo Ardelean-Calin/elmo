@@ -79,3 +79,19 @@ func TestCursorBounds(t *testing.T) {
 		t.Fatalf("Cursor Bounds Test failed. expected: %s, got %s", want, got)
 	}
 }
+
+func TestRuneAt(t *testing.T) {
+	b := New().WithContent("Test")
+	if b.RuneAt(0) != 'T' {
+		t.FailNow()
+	}
+	if b.RuneAt(1) != 'e' {
+		t.FailNow()
+	}
+	if b.RuneAt(2) != 's' {
+		t.FailNow()
+	}
+	if b.RuneAt(3) != 't' {
+		t.FailNow()
+	}
+}
