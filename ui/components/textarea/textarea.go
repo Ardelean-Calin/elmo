@@ -37,36 +37,36 @@ func ErrorCmd(err error) tea.Cmd {
 }
 
 type Model struct {
-	buffers       buffer.LinkedList  // Linked list containing all buffers as displayed in the bufferline
-	activeNode    *buffer.BufferNode // Currently active buffer
-	Focused       bool               // If focused, we react to events
-	Height, Width int                // Size of the textarea
-	Viewport      viewport.Model     // Scrollable viewport
+	bufList       buffer.LinkedList // Linked list containing all buffers as displayed in the bufferline
+	CurBuf        *buffer.Buffer    // Currently active buffer
+	Focused       bool              // If focused, we react to events
+	Height, Width int               // Size of the textarea
+	Viewport      viewport.Model    // Scrollable viewport
 }
 
 func New() Model {
 	return Model{
-		buffers:    buffer.NewList(),
-		activeNode: nil,
-		Focused:    false,
+		bufList: buffer.NewList(),
+		CurBuf:  nil,
+		Focused: false,
 	}
 }
 
-// CurrentBuffer returns the path of the currently active buffer
-func (m *Model) CurrentBuffer() string {
-	if m.activeNode != nil {
-		return m.activeNode.Buffer.Path
+// CurBufPath returns the path of the currently active buffer
+func (m *Model) CurBufPath() string {
+	if m.CurBuf != nil {
+		return m.CurBuf.Path
 	}
 	return ""
 }
 
 // SwitchBuffer tries to switch to the given buffer. Returns false if buffer doesn't exist
 func (m *Model) SwitchBuffer(path string) bool {
-	iterator := m.buffers.Iter()
+	iterator := m.bufList.Iter()
 	for iterator.HasNext() {
 		node := iterator.Next()
 		if node.Buffer.Path == path {
-			m.activeNode = node
+			m.CurBuf = node.Buffer
 			return true
 		}
 	}
@@ -85,8 +85,8 @@ func (m *Model) OpenBuffer(path string) tea.Cmd {
 			return ErrorCmd(err)
 		}
 		n := buffer.Node(b)
-		m.buffers.AddNode(n)
-		m.activeNode = n
+		m.bufList.AddNode(n)
+		m.CurBuf = b
 	}
 
 	// We already had the buffer opened and focused it.
@@ -117,24 +117,25 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 func (m Model) View() string {
 	bufferline := ""
 
-	iterator := m.buffers.Iter()
+	iterator := m.bufList.Iter()
 	for iterator.HasNext() {
 		node := iterator.Next()
 		style := lipgloss.NewStyle().Padding(0, 1)
-		if node == m.activeNode {
+		if node.Buffer == m.CurBuf {
 			style = style.Reverse(true)
 		}
 		bufferline += style.
 			Render(node.Buffer.Name())
 	}
 
-	if m.activeNode != nil {
+	if m.CurBuf != nil {
+		// Render the contents to screen, as well as the cursor
 		var sb strings.Builder
-		var runes []rune = []rune(m.activeNode.Buffer.String())
-		for i, r := range runes {
-			if i == m.activeNode.Buffer.Cursor.Pos {
-				m.activeNode.Buffer.Cursor.Char = string(r)
-				sb.WriteString(m.activeNode.Buffer.Cursor.View())
+		var runes []rune = []rune(m.CurBuf.String())
+		for pos, r := range runes {
+			if pos == m.CurBuf.Cursor.Pos {
+				m.CurBuf.Cursor.Char = string(r)
+				sb.WriteString(m.CurBuf.Cursor.View())
 			} else {
 				sb.WriteRune(r)
 			}

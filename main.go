@@ -133,7 +133,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Switched to a new buffer
 	case textarea.EvtBufferSwitched:
-		m.statusbar.SetOpenBuffer(m.textarea.CurrentBuffer())
+		m.statusbar.SetOpenBuffer(m.textarea.CurBufPath())
 
 	// Received an error
 	case textarea.ErrorMsg:
