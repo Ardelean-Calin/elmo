@@ -15,14 +15,31 @@ type Model struct {
 
 	// char is the character under the cursor
 	Char string
-	// pos is the absolute position of the cursor in the string
-	Pos int
+	// Position of the cursor
+	Row, Col int
+}
+
+func (m *Model) Up() {
+	m.Row = max(0, m.Row-1)
+}
+
+func (m *Model) Down() {
+	m.Row++
+}
+
+func (m *Model) Left() {
+	m.Col = max(0, m.Col-1)
+}
+
+func (m *Model) Right() {
+	m.Col++
 }
 
 // New creates a new model with default settings.
 func New() Model {
 	return Model{
-		Pos: 0,
+		Row: 0,
+		Col: 0,
 	}
 }
 

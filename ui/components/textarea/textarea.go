@@ -3,6 +3,7 @@ package textarea
 import (
 	"moe/pkg/buffer"
 	"strings"
+	// "strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -37,7 +38,7 @@ func ErrorCmd(err error) tea.Cmd {
 }
 
 type Model struct {
-	bufList       buffer.LinkedList // Linked list containing all buffers as displayed in the bufferline
+	Buffers       buffer.LinkedList // Linked list containing all buffers as displayed in the bufferline
 	CurBuf        *buffer.Buffer    // Currently active buffer
 	Focused       bool              // If focused, we react to events
 	Height, Width int               // Size of the textarea
@@ -46,7 +47,7 @@ type Model struct {
 
 func New() Model {
 	return Model{
-		bufList: buffer.NewList(),
+		Buffers: buffer.NewList(),
 		CurBuf:  nil,
 		Focused: false,
 	}
@@ -62,7 +63,7 @@ func (m *Model) CurBufPath() string {
 
 // SwitchBuffer tries to switch to the given buffer. Returns false if buffer doesn't exist
 func (m *Model) SwitchBuffer(path string) bool {
-	iterator := m.bufList.Iter()
+	iterator := m.Buffers.Iter()
 	for iterator.HasNext() {
 		node := iterator.Next()
 		if node.Buffer.Path == path {
@@ -85,7 +86,7 @@ func (m *Model) OpenBuffer(path string) tea.Cmd {
 			return ErrorCmd(err)
 		}
 		n := buffer.Node(b)
-		m.bufList.AddNode(n)
+		m.Buffers.AddNode(n)
 		m.CurBuf = b
 	}
 
@@ -104,11 +105,20 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.Viewport.Width = msg.Width
 		m.Viewport.Height = msg.Height - 3
 	case tea.KeyMsg:
+		if msg.String() == "j" {
+			m.CurBuf.Cursor.Down()
+			// Note: To remember cursor position, we can simply not alter
+			// the cursor column unless we move left or right.
+			// When displaying the cursor, if the column is bigger than the total line length, we just render the cursor on the last character
+		}
+		if msg.String() == "k" {
+			m.CurBuf.Cursor.Up()
+		}
 		if msg.String() == "l" {
-			m.CurBuf.CursorRight()
+			m.CurBuf.Cursor.Right()
 		}
 		if msg.String() == "h" {
-			m.CurBuf.CursorLeft()
+			m.CurBuf.Cursor.Left()
 		}
 	default:
 		if !m.Focused {
@@ -122,9 +132,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	// Render the buffer line
 	bufferline := ""
 
-	iterator := m.bufList.Iter()
+	iterator := m.Buffers.Iter()
 	for iterator.HasNext() {
 		node := iterator.Next()
 		style := lipgloss.NewStyle().Padding(0, 1)
@@ -138,15 +149,21 @@ func (m Model) View() string {
 	if m.CurBuf != nil {
 		// Render the contents to screen, as well as the cursor
 		var sb strings.Builder
-		var runes []rune = []rune(m.CurBuf.String())
-		for pos, r := range runes {
-			if pos == m.CurBuf.Cursor.Pos {
+		// Get the absolute position of the cursor inside the gap buffer
+		cursorPos := m.CurBuf.Lines.Get(m.CurBuf.Cursor.Row) + m.CurBuf.Cursor.Col
+		iterator := m.CurBuf.Val.Iter()
+		for iterator.HasNext() {
+			index, r := iterator.Next()
+			if index == cursorPos {
 				m.CurBuf.Cursor.Char = string(r)
 				sb.WriteString(m.CurBuf.Cursor.View())
 			} else {
 				sb.WriteRune(r)
 			}
 		}
+		// I don't like this approach, since I always render a full screen
+		// and have to keep it into memory. I could use the newly defined
+		// lineBuf
 		m.Viewport.SetContent(sb.String())
 	} else {
 		m.Viewport.SetContent("")

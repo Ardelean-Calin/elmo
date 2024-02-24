@@ -13,11 +13,13 @@ import (
 type Buffer struct {
 	parentNode *BufferNode
 
-	Path     string                     // Absolute path on disk.
-	fd       *os.File                   // File descriptor.
-	val      *gapbuffer.GapBuffer[rune] // Actual raw text data. Gap Buffer is a nice compromise between Piece Chain and buffer.
-	modified bool                       // Content was modified and not saved to disk
-	Cursor   cursor.Model               // Cursor position inside this buffer.
+	Path                 string                     // Absolute path on disk.
+	fd                   *os.File                   // File descriptor.
+	Val                  *gapbuffer.GapBuffer[rune] // Actual raw text data. Gap Buffer is a nice compromise between Piece Chain and buffer.
+	Lines                *gapbuffer.GapBuffer[int]  // The line numbers are also stored in a Gap Buffer
+	modified             bool                       // Content was modified and not saved to disk
+	CursorRow, CursorCol int                        // ???
+	Cursor               cursor.Model               // Cursor position inside this buffer.
 }
 
 // NewBuffer constructs a new buffer from a path. If that file exists, it opens it for reading,
@@ -36,14 +38,26 @@ func NewBuffer(path string) (*Buffer, error) {
 	}
 
 	// Ok by this point I either have a fd with some bytes or a nil fd and nil bytes
+	// Create a gap buffer with the contents of the file
 	content := []rune(string(bytes))
-	buf := gapbuffer.New(content)
+	buf := gapbuffer.NewGapBuffer(content)
+	// And create a gap buffer with all the newline indices. This way I can simply
+	// index the line as line[n] and get the index inside the gap buffer where the n-th line
+	// starts.
+	indices := []int{-1}
+	indices = append(indices, buf.FindAll('\n')...)
+	// Increment the indices so that they point to the line starts
+	for i := range indices {
+		indices[i]++
+	}
+	lineBuf := gapbuffer.NewGapBuffer(indices)
 
 	return &Buffer{
 		parentNode: nil,
 		Path:       path,
 		fd:         fd,
-		val:        &buf,
+		Val:        &buf,
+		Lines:      &lineBuf,
 		modified:   false,
 		Cursor:     cursor.New(),
 	}, nil
@@ -52,12 +66,12 @@ func NewBuffer(path string) (*Buffer, error) {
 
 // String returns the string contained in this buffer
 func (b *Buffer) String() string {
-	content := b.val
+	content := b.Val
 	if content == nil {
 		return ""
 	}
 
-	return string(b.val.Collect())
+	return string(b.Val.Collect())
 }
 
 // Name returns the title of the buffer window to display
@@ -66,18 +80,20 @@ func (b Buffer) Name() string {
 	return name
 }
 
+// CursorRight moves the cursor one position to the right
 func (b *Buffer) CursorRight() {
-	pos := min(b.Cursor.Pos+1, b.val.Len())
-	char := b.val.ElementAt(pos)
-	b.Cursor.Char = string(char)
-	b.Cursor.Pos = pos
+	// lineLength := b.Lines[b.Cursor.Col+1] - b.Lines[b.Cursor.Col]
+	// pos := min(b.Cursor.Col+1, b.val.Len())
+	// char := b.val.ElementAt(pos)
+	// b.Cursor.Char = string(char)
+	// b.Cursor.Pos = pos
 }
 
 func (b *Buffer) CursorLeft() {
-	pos := max(b.Cursor.Pos-1, 0)
-	char := b.val.ElementAt(pos)
-	b.Cursor.Char = string(char)
-	b.Cursor.Pos = pos
+	// pos := max(b.Cursor.Pos-1, 0)
+	// char := b.val.ElementAt(pos)
+	// b.Cursor.Char = string(char)
+	// b.Cursor.Pos = pos
 }
 
 // The bufferline is composed of a linked-list

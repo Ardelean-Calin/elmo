@@ -5,68 +5,86 @@ import (
 )
 
 // Gap Buffer implementation. See: https://routley.io/posts/gap-buffer
-type GapBuffer[T any] struct {
-	buffer   []T // NOTE: In the future I might want this to be a pointer. I avoided this for now as it looked ugly
-	gapStart int // Index of the first character *in* the gap
-	gapEnd   int // Index of the first character *after* the gap
+type GapBuffer[T ~int | ~rune] struct {
+	Buffer   []T // NOTE: In the future I might want this to be a pointer. I avoided this for now as it looked ugly
+	GapStart int // Index of the first character *in* the gap
+	GapEnd   int // Index of the first character *after* the gap
 }
 
-// New creates a new gapbuffer and populates it with content
-func New[T any](content []T) GapBuffer[T] {
+// NewGapBuffer creates a new gapbuffer and populates it with content
+func NewGapBuffer[T ~int | ~rune](content []T) GapBuffer[T] {
 	return GapBuffer[T]{
-		buffer:   content,
-		gapStart: 0,
-		gapEnd:   0,
+		Buffer:   content,
+		GapStart: 0,
+		GapEnd:   0,
 	}
 }
 
 // Collect returns a slice of the content of the gap buffer, without gap
 func (b *GapBuffer[T]) Collect() []T {
 	var dest []T
-	dest = append(dest, b.buffer[:b.gapStart]...)
-	dest = append(dest, b.buffer[b.gapEnd:]...)
+	dest = append(dest, b.Buffer[:b.GapStart]...)
+	dest = append(dest, b.Buffer[b.GapEnd:]...)
 	return dest
+}
+
+// FindAll returns a slice with the indices of all found items inside the gap buffer
+func (b *GapBuffer[T]) FindAll(val T) []int {
+	var results []int
+	for index, v := range b.Buffer {
+		if v == val {
+			results = append(results, index)
+		}
+	}
+
+	return results
 }
 
 // gapSize returns the gap size
 func (b *GapBuffer[T]) gapSize() int {
-	return b.gapEnd - b.gapStart
+	return b.GapEnd - b.GapStart
 }
 
+// growGap grows the gap by up to 5% of the total buffer size
 func (b *GapBuffer[T]) growGap() {
 	// Gap size should be up to 5% of the total buffer size, but at least 64 bytes.
 	// I've taken this from https://shorturl.at/FKOUZ
-	gapSize := max(len(b.buffer)/20, 64)
+	gapSize := max(len(b.Buffer)/20, 64)
 	// In case of testing we use a smaller size to make it easier.
 	if flag.Lookup("test.v") != nil {
 		gapSize = 5
 	}
-	newBuffer := make([]T, len(b.buffer)+gapSize)
+	newBuffer := make([]T, len(b.Buffer)+gapSize)
 
-	copy(newBuffer, b.buffer[:b.gapStart])
-	copy(newBuffer[b.gapEnd+gapSize:], b.buffer[b.gapEnd:])
+	copy(newBuffer, b.Buffer[:b.GapStart])
+	copy(newBuffer[b.GapEnd+gapSize:], b.Buffer[b.GapEnd:])
 
-	b.buffer = newBuffer
-	b.gapEnd = b.gapStart + gapSize
+	b.Buffer = newBuffer
+	b.GapEnd = b.GapStart + gapSize
 }
 
-// Len returns the size of the raw text
+// Count returns the size of the raw text, excliding the gap
+func (b *GapBuffer[T]) Count() int {
+	return len(b.Buffer) - b.gapSize()
+}
+
+// Len returns the total length of the gap buffer, including gap
 func (b *GapBuffer[T]) Len() int {
-	return len(b.buffer) - b.gapSize()
+	return len(b.Buffer)
 }
 
 // TotalLen returns the total length of the gap buffer (including gaps)
 func (b *GapBuffer[T]) TotalLen() int {
-	return len(b.buffer)
+	return len(b.Buffer)
 }
 
-// ElementAt returns the element at the given position.
-func (b *GapBuffer[T]) ElementAt(pos int) T {
-	if pos > b.gapStart && b.gapSize() != 0 {
-		pos = (b.gapStart - pos) + b.gapEnd
+// Get returns the element at the given position.
+func (b *GapBuffer[T]) Get(pos int) T {
+	if pos > b.GapStart && b.gapSize() != 0 {
+		pos = (b.GapStart - pos) + b.GapEnd
 	}
 
-	return b.buffer[pos]
+	return b.Buffer[pos]
 }
 
 // CursorGoto moves the cursor to the given position
@@ -77,28 +95,28 @@ func (b *GapBuffer[T]) CursorGoto(pos int) {
 // CursorRight moves the cursor left one character.
 func (b *GapBuffer[T]) CursorLeft() {
 	// We are already at the start!
-	if b.gapStart == 0 {
+	if b.GapStart == 0 {
 		return
 	}
 
 	// The first element before the start of the gap gets copied after the gap
 	// [abc_____] becomes [ab_____c]
-	b.buffer[b.gapEnd-1] = b.buffer[b.gapStart-1]
-	b.gapStart--
-	b.gapEnd--
+	b.Buffer[b.GapEnd-1] = b.Buffer[b.GapStart-1]
+	b.GapStart--
+	b.GapEnd--
 }
 
 // CursorRight moves the cursor right one character.
 func (b *GapBuffer[T]) CursorRight() {
 	// We are already at the end!
-	if b.gapEnd == len(b.buffer) {
+	if b.GapEnd == len(b.Buffer) {
 		return
 	}
 
 	// [ab_____c] becomes [abc_____]
-	b.buffer[b.gapStart] = b.buffer[b.gapEnd]
-	b.gapStart++
-	b.gapEnd++
+	b.Buffer[b.GapStart] = b.Buffer[b.GapEnd]
+	b.GapStart++
+	b.GapEnd++
 }
 
 // InsertElements inserts a slice of T at the current cursor position.
@@ -114,15 +132,51 @@ func (b *GapBuffer[T]) Insert(el T) {
 		b.growGap()
 	}
 
-	b.buffer[b.gapStart] = el
-	b.gapStart++
+	b.Buffer[b.GapStart] = el
+	b.GapStart++
 }
 
 // Delete deletes the character at the current cursor position.
 func (b *GapBuffer[T]) Delete() {
-	if b.gapStart == 0 {
+	if b.GapEnd == len(b.Buffer) {
 		return
 	}
 
-	b.gapStart--
+	// Grow the gap towards right
+	b.GapEnd++
+}
+
+// Backspace deletes the character before the current position
+func (b *GapBuffer[T]) Backspace() {
+	if b.GapStart == 0 {
+		return
+	}
+
+	// Grow the gap towards left
+	b.GapStart--
+}
+
+/* Provide an iterator interface for the GapBuffer */
+
+func (b *GapBuffer[T]) Iter() GapBufferIterator[T] {
+	return GapBufferIterator[T]{
+		gb:    b,
+		index: 0,
+	}
+}
+
+type GapBufferIterator[T ~int | ~rune] struct {
+	index int
+	gb    *GapBuffer[T]
+}
+
+func (gi *GapBufferIterator[T]) HasNext() bool {
+	return gi.index < gi.gb.Len()
+}
+
+func (gi *GapBufferIterator[T]) Next() (int, T) {
+	index := gi.index
+	val := gi.gb.Buffer[index]
+	gi.index++
+	return index, val
 }
