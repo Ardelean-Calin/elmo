@@ -2,11 +2,12 @@ package buffer
 
 import (
 	"io"
-	"moe/pkg/common"
-	"moe/pkg/gapbuffer"
-	"moe/ui/components/cursor"
 	"os"
 	"path"
+
+	"git.calinp.dev/moe/pkg/common"
+	"git.calinp.dev/moe/pkg/gapbuffer"
+	"git.calinp.dev/moe/ui/components/cursor"
 )
 
 // Buffer represents an opened file.

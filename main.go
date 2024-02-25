@@ -3,10 +3,11 @@ package main
 import (
 	"fmt"
 	"log"
-	"moe/ui/components/footer"
-	"moe/ui/components/statusbar"
-	"moe/ui/components/textarea"
 	"os"
+
+	"git.calinp.dev/moe/ui/components/footer"
+	"git.calinp.dev/moe/ui/components/statusbar"
+	"git.calinp.dev/moe/ui/components/textarea"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -15,7 +16,7 @@ import (
 // Let's try to create an editor that is as simple as possible.
 // Goals:
 //
-// - simple underlying buffer implementation
+// - simple underlying buffer implementation      [x]
 // - bufferline, statusbar, footer and main view
 // - no helptext
 // - Helix keybindings

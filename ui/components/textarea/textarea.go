@@ -1,9 +1,10 @@
 package textarea
 
 import (
-	"moe/pkg/buffer"
 	"strings"
 	// "strings"
+
+	"git.calinp.dev/moe/pkg/buffer"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
