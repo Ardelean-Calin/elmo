@@ -5,9 +5,9 @@ import (
 	"os"
 	"path"
 
-	"git.calinp.dev/moe/pkg/common"
-	"git.calinp.dev/moe/pkg/gapbuffer"
-	"git.calinp.dev/moe/ui/components/cursor"
+	"github.com/Ardelean-Calin/moe/pkg/common"
+	"github.com/Ardelean-Calin/moe/pkg/gapbuffer"
+	"github.com/Ardelean-Calin/moe/ui/components/cursor"
 )
 
 // Buffer represents an opened file.

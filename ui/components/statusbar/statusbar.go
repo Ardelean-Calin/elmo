@@ -1,7 +1,7 @@
 package statusbar
 
 import (
-	"git.calinp.dev/moe/pkg/common"
+	"github.com/Ardelean-Calin/moe/pkg/common"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

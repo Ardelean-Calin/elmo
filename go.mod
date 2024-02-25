@@ -1,4 +1,4 @@
-module git.calinp.dev/moe
+module github.com/Ardelean-Calin/moe
 
 go 1.22.0
 
