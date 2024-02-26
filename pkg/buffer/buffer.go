@@ -41,7 +41,8 @@ func NewBuffer(path string) (*Buffer, error) {
 	// Ok by this point I either have a fd with some bytes or a nil fd and nil bytes
 	// Create a gap buffer with the contents of the file
 	content := []rune(string(bytes))
-	buf := gapbuffer.NewGapBuffer(content)
+	buf := gapbuffer.NewGapBuffer[rune]()
+	buf.SetContent(content)
 	// And create a gap buffer with all the newline indices. This way I can simply
 	// index the line as line[n] and get the index inside the gap buffer where the n-th line
 	// starts.
@@ -51,7 +52,8 @@ func NewBuffer(path string) (*Buffer, error) {
 	for i := range indices {
 		indices[i]++
 	}
-	lineBuf := gapbuffer.NewGapBuffer(indices)
+	lineBuf := gapbuffer.NewGapBuffer[int]()
+	lineBuf.SetContent(indices)
 
 	return &Buffer{
 		parentNode: nil,

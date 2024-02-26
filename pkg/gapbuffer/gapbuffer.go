@@ -11,13 +11,18 @@ type GapBuffer[T ~int | ~rune] struct {
 	GapEnd   int // Index of the first character *after* the gap
 }
 
-// NewGapBuffer creates a new gapbuffer and populates it with content
-func NewGapBuffer[T ~int | ~rune](content []T) GapBuffer[T] {
+// NewGapBuffer creates a new empty gapbuffer
+func NewGapBuffer[T ~int | ~rune]() GapBuffer[T] {
 	return GapBuffer[T]{
-		Buffer:   content,
+		Buffer:   []T{},
 		GapStart: 0,
 		GapEnd:   0,
 	}
+}
+
+// SetContent sets the gapbuffer content
+func (b *GapBuffer[T]) SetContent(content []T) {
+	b.Buffer = content
 }
 
 // Collect returns a slice of the content of the gap buffer, without gap
