@@ -92,9 +92,39 @@ func (b *GapBuffer[T]) Get(pos int) T {
 	return b.Buffer[pos]
 }
 
-// CursorGoto moves the cursor to the given position
+// CursorGoto moves the cursor to the given (absolute) position
 func (b *GapBuffer[T]) CursorGoto(pos int) {
-	panic("Unimplemented")
+	if pos+b.gapSize() > b.Len() {
+		pos = b.Len() - b.gapSize()
+	}
+
+	if pos > b.GapStart {
+		// [a b _ _ _ c d e f] becomes [a b c d e _ _ _ f]
+		diff := pos - b.GapStart
+		copy(b.Buffer[b.GapStart:], b.Buffer[b.GapEnd:b.GapEnd+diff])
+	} else if pos < b.GapStart {
+		// [a b c d e _ _ _ f] becomes [a b _ _ _ c d e f]
+		//      ^     s     e               s     e
+		//                                  ^
+		// Step 0: New empty buffer [_ _ _ _ _ _ _ _ _]
+		newBuf := make([]T, b.TotalLen())
+		i := 0
+
+		// Step 1: Copy part until new position to buffer
+		// [a b _ _ _ _ _ _ _]
+		i += copy(newBuf[i:pos], b.Buffer[i:pos])
+		// Step 2: Leave a gap
+		i += b.gapSize()
+		// Step 3: Copy part from position to gapStart
+		// [a b _ _ _ c d e _]
+		i += copy(newBuf[i:], b.Buffer[pos:b.GapStart])
+		// Finally: Copy all the bytes from gapEnd to end
+		copy(newBuf[i:], b.Buffer[b.GapEnd:])
+
+		b.Buffer = newBuf
+	}
+	b.GapEnd = pos + b.gapSize()
+	b.GapStart = pos
 }
 
 // CursorRight moves the cursor left one character.

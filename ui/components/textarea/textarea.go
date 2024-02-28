@@ -107,19 +107,27 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.Viewport.Height = msg.Height - 3
 	case tea.KeyMsg:
 		if msg.String() == "j" {
-			m.CurBuf.Cursor.Down()
+			lines := m.CurBuf.Lines
+			lines.CursorRight()
+			lineIndex := lines.Get(lines.GapEnd)
+
+			m.CurBuf.Val.CursorGoto(lineIndex)
 			// Note: To remember cursor position, we can simply not alter
 			// the cursor column unless we move left or right.
 			// When displaying the cursor, if the column is bigger than the total line length, we just render the cursor on the last character
 		}
 		if msg.String() == "k" {
-			m.CurBuf.Cursor.Up()
+			lines := m.CurBuf.Lines
+			lines.CursorLeft()
+			lineIndex := lines.Get(lines.GapEnd)
+
+			m.CurBuf.Val.CursorGoto(lineIndex)
 		}
 		if msg.String() == "l" {
-			m.CurBuf.Cursor.Right()
+			m.CurBuf.Val.CursorRight()
 		}
 		if msg.String() == "h" {
-			m.CurBuf.Cursor.Left()
+			m.CurBuf.Val.CursorLeft()
 		}
 	default:
 		if !m.Focused {
@@ -131,6 +139,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	return m, nil
 }
+
+// func cursorToAbs(c cursor.Model) int {
+// 	c.Row
+// }
 
 func (m Model) View() string {
 	// Render the buffer line
@@ -151,7 +163,8 @@ func (m Model) View() string {
 		// Render the contents to screen, as well as the cursor
 		var sb strings.Builder
 		// Get the absolute position of the cursor inside the gap buffer
-		cursorPos := m.CurBuf.Lines.Get(m.CurBuf.Cursor.Row) + m.CurBuf.Cursor.Col
+
+		cursorPos := 0
 		iterator := m.CurBuf.Val.Iter()
 		for iterator.HasNext() {
 			index, r := iterator.Next()

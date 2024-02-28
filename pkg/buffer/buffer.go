@@ -14,13 +14,12 @@ import (
 type Buffer struct {
 	parentNode *BufferNode
 
-	Path                 string                     // Absolute path on disk.
-	fd                   *os.File                   // File descriptor.
-	Val                  *gapbuffer.GapBuffer[rune] // Actual raw text data. Gap Buffer is a nice compromise between Piece Chain and buffer.
-	Lines                *gapbuffer.GapBuffer[int]  // The line numbers are also stored in a Gap Buffer
-	modified             bool                       // Content was modified and not saved to disk
-	CursorRow, CursorCol int                        // ???
-	Cursor               cursor.Model               // Cursor position inside this buffer.
+	Path     string                     // Absolute path on disk.
+	fd       *os.File                   // File descriptor.
+	Val      *gapbuffer.GapBuffer[rune] // Actual raw text data. Gap Buffer is a nice compromise between Piece Chain and buffer.
+	Lines    *gapbuffer.GapBuffer[int]  // The line numbers are also stored in a Gap Buffer
+	modified bool                       // Content was modified and not saved to disk
+	Cursor   cursor.Model               // Cursor position inside this buffer.
 }
 
 // NewBuffer constructs a new buffer from a path. If that file exists, it opens it for reading,
@@ -81,22 +80,6 @@ func (b *Buffer) String() string {
 func (b Buffer) Name() string {
 	_, name := path.Split(b.Path)
 	return name
-}
-
-// CursorRight moves the cursor one position to the right
-func (b *Buffer) CursorRight() {
-	// lineLength := b.Lines[b.Cursor.Col+1] - b.Lines[b.Cursor.Col]
-	// pos := min(b.Cursor.Col+1, b.val.Len())
-	// char := b.val.ElementAt(pos)
-	// b.Cursor.Char = string(char)
-	// b.Cursor.Pos = pos
-}
-
-func (b *Buffer) CursorLeft() {
-	// pos := max(b.Cursor.Pos-1, 0)
-	// char := b.val.ElementAt(pos)
-	// b.Cursor.Char = string(char)
-	// b.Cursor.Pos = pos
 }
 
 // The bufferline is composed of a linked-list
