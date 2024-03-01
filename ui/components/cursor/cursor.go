@@ -5,6 +5,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Gap Buffer interface needed for cursor navigation
+type GapInterface interface {
+	Get(pos int) rune
+	Count() int
+}
+
 // Model is the Bubble Tea model for this cursor element.
 type Model struct {
 	// Style for styling the cursor block.
@@ -13,43 +19,50 @@ type Model struct {
 	// I.e. displaying normal text.
 	TextStyle lipgloss.Style
 
+	// Underlying text buffer on which we navigate
+	buf GapInterface
 	// char is the character under the cursor
 	Char string
-	// Position of the cursor
-	Row, Col int
+	// Position of the cursor inside the raw text
+	Pos int
 }
 
-func (m *Model) Up() {
-	m.Row = max(0, m.Row-1)
-}
-
-func (m *Model) Down() {
-	m.Row++
+func (m *Model) Goto(pos int) {
+	m.Pos = pos
+	m.Char = string(m.buf.Get(m.Pos))
 }
 
 func (m *Model) Left() {
-	m.Col = max(0, m.Col-1)
+	m.Pos = max(0, m.Pos-1)
+	m.Char = string(m.buf.Get(m.Pos))
 }
 
 func (m *Model) Right() {
-	m.Col++
+	m.Pos = min(m.buf.Count(), m.Pos+1)
+	m.Char = string(m.buf.Get(m.Pos))
 }
 
-// New creates a new model with default settings.
-func New() Model {
+// New creates a new cursor bound to the given Gap Buffer
+func New(bufPtr GapInterface) Model {
 	return Model{
-		Row: 0,
-		Col: 0,
+		buf:  bufPtr,
+		Char: string(bufPtr.Get(0)),
+		Pos:  0,
 	}
 }
 
 // Update updates the cursor.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
-
 	return m, nil
 }
 
 // View displays the cursor.
 func (m Model) View() string {
-	return m.Style.Inline(true).Reverse(true).Render(m.Char)
+	style := m.Style.Inline(false).Reverse(true)
+	if m.Char == "\n" {
+		return style.Width(1).Render("")
+	} else {
+		return style.Render(m.Char)
+	}
+
 }

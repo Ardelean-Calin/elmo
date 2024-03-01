@@ -93,7 +93,7 @@ func (b *GapBuffer[T]) Get(pos int) T {
 }
 
 // CursorGoto moves the cursor to the given (absolute) position
-func (b *GapBuffer[T]) CursorGoto(pos int) {
+func (b *GapBuffer[T]) CursorGoto(pos int) (actualPos int) {
 	if pos+b.gapSize() > b.Len() {
 		pos = b.Len() - b.gapSize()
 	}
@@ -125,6 +125,8 @@ func (b *GapBuffer[T]) CursorGoto(pos int) {
 	}
 	b.GapEnd = pos + b.gapSize()
 	b.GapStart = pos
+	actualPos = pos
+	return
 }
 
 // CursorRight moves the cursor left one character.
@@ -191,7 +193,9 @@ func (b *GapBuffer[T]) Backspace() {
 	b.GapStart--
 }
 
-/* Provide an iterator interface for the GapBuffer */
+/* Provide an iterator interface for the GapBuffer.
+   This iterator jumps over gaps.
+*/
 
 func (b *GapBuffer[T]) Iter() GapBufferIterator[T] {
 	return GapBufferIterator[T]{
@@ -206,12 +210,12 @@ type GapBufferIterator[T ~int | ~rune] struct {
 }
 
 func (gi *GapBufferIterator[T]) HasNext() bool {
-	return gi.index < gi.gb.Len()
+	return gi.index < gi.gb.Count()
 }
 
 func (gi *GapBufferIterator[T]) Next() (int, T) {
 	index := gi.index
-	val := gi.gb.Buffer[index]
+	val := gi.gb.Get(index)
 	gi.index++
 	return index, val
 }

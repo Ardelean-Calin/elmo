@@ -111,7 +111,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			lines.CursorRight()
 			lineIndex := lines.Get(lines.GapEnd)
 
-			m.CurBuf.Val.CursorGoto(lineIndex)
+			m.CurBuf.Cursor.Goto(lineIndex)
 			// Note: To remember cursor position, we can simply not alter
 			// the cursor column unless we move left or right.
 			// When displaying the cursor, if the column is bigger than the total line length, we just render the cursor on the last character
@@ -121,13 +121,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			lines.CursorLeft()
 			lineIndex := lines.Get(lines.GapEnd)
 
-			m.CurBuf.Val.CursorGoto(lineIndex)
+			m.CurBuf.Cursor.Goto(lineIndex)
 		}
 		if msg.String() == "l" {
-			m.CurBuf.Val.CursorRight()
+			m.CurBuf.Cursor.Right()
 		}
 		if msg.String() == "h" {
-			m.CurBuf.Val.CursorLeft()
+			m.CurBuf.Cursor.Left()
 		}
 	default:
 		if !m.Focused {
@@ -162,15 +162,15 @@ func (m Model) View() string {
 	if m.CurBuf != nil {
 		// Render the contents to screen, as well as the cursor
 		var sb strings.Builder
-		// Get the absolute position of the cursor inside the gap buffer
 
-		cursorPos := 0
 		iterator := m.CurBuf.Val.Iter()
 		for iterator.HasNext() {
 			index, r := iterator.Next()
-			if index == cursorPos {
-				m.CurBuf.Cursor.Char = string(r)
+			if index == m.CurBuf.Cursor.Pos {
 				sb.WriteString(m.CurBuf.Cursor.View())
+				if r == '\n' {
+					sb.WriteRune('\n')
+				}
 			} else {
 				sb.WriteRune(r)
 			}

@@ -61,7 +61,7 @@ func NewBuffer(path string) (*Buffer, error) {
 		Val:        &buf,
 		Lines:      &lineBuf,
 		modified:   false,
-		Cursor:     cursor.New(),
+		Cursor:     cursor.New(&buf),
 	}, nil
 
 }
