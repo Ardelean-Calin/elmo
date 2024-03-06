@@ -3,6 +3,7 @@ package footer
 import (
 	"unicode/utf8"
 
+	"github.com/charmbracelet/bubbles/cursor"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -12,15 +13,19 @@ type Model struct {
 	focused       bool
 	error, status string
 	errorStyle    lipgloss.Style
+	cursor        cursor.Model
 }
 
 func New() Model {
+	cursor := cursor.New()
+	cursor.Focus()
 	return Model{
 		text:       "",
 		focused:    false,
 		error:      "",
 		status:     "",
 		errorStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("#ff0000")),
+		cursor:     cursor,
 	}
 }
 
@@ -87,7 +92,8 @@ func (m Model) View() string {
 	} else if m.status != "" {
 		s += m.status
 	} else if m.focused {
-		s += ":" + m.text
+		m.cursor.SetChar(" ")
+		s += ":" + m.text + m.cursor.View()
 	}
 	return s
 }

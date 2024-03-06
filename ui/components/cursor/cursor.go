@@ -7,7 +7,7 @@ import (
 
 // Gap Buffer interface needed for cursor navigation
 type GapInterface interface {
-	Get(pos int) rune
+	GetAbs(pos int) rune
 	Count() int
 }
 
@@ -29,24 +29,24 @@ type Model struct {
 
 func (m *Model) Goto(pos int) {
 	m.Pos = pos
-	m.Char = string(m.buf.Get(m.Pos))
+	m.Char = string(m.buf.GetAbs(m.Pos))
 }
 
 func (m *Model) Left() {
 	m.Pos = max(0, m.Pos-1)
-	m.Char = string(m.buf.Get(m.Pos))
+	m.Char = string(m.buf.GetAbs(m.Pos))
 }
 
 func (m *Model) Right() {
 	m.Pos = min(m.buf.Count(), m.Pos+1)
-	m.Char = string(m.buf.Get(m.Pos))
+	m.Char = string(m.buf.GetAbs(m.Pos))
 }
 
 // New creates a new cursor bound to the given Gap Buffer
 func New(bufPtr GapInterface) Model {
 	return Model{
 		buf:  bufPtr,
-		Char: string(bufPtr.Get(0)),
+		Char: string(bufPtr.GetAbs(0)),
 		Pos:  0,
 	}
 }

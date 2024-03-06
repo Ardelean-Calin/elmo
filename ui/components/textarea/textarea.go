@@ -15,7 +15,8 @@ import (
 type StatusMsg string
 type ErrorMsg error
 
-type EvtBufferSwitched string
+type BufSwitchedMsg string
+type LineChangedMsg int
 
 // Return a message as an event
 func Event(T any) tea.Cmd {
@@ -92,7 +93,7 @@ func (m *Model) OpenBuffer(path string) tea.Cmd {
 	}
 
 	// We already had the buffer opened and focused it.
-	return Event(EvtBufferSwitched(path))
+	return Event(BufSwitchedMsg(path))
 }
 
 func (m Model) Init() tea.Cmd {
@@ -100,6 +101,8 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -107,28 +110,20 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.Viewport.Height = msg.Height - 3
 	case tea.KeyMsg:
 		if msg.String() == "j" {
-			lines := m.CurBuf.Lines
-			lines.CursorRight()
-			lineIndex := lines.Get(lines.GapEnd)
-
-			m.CurBuf.Cursor.Goto(lineIndex)
-			// Note: To remember cursor position, we can simply not alter
-			// the cursor column unless we move left or right.
-			// When displaying the cursor, if the column is bigger than the total line length, we just render the cursor on the last character
+			m.CurBuf.CursorDown()
 		}
 		if msg.String() == "k" {
-			lines := m.CurBuf.Lines
-			lines.CursorLeft()
-			lineIndex := lines.Get(lines.GapEnd)
-
-			m.CurBuf.Cursor.Goto(lineIndex)
+			m.CurBuf.CursorUp()
 		}
 		if msg.String() == "l" {
-			m.CurBuf.Cursor.Right()
+			m.CurBuf.CursorRight()
 		}
 		if msg.String() == "h" {
-			m.CurBuf.Cursor.Left()
+			m.CurBuf.CursorLeft()
 		}
+	// case buffer.BufferUpdateMsg:
+	// A buffer's content has been updated...
+	//     m.Viewport.SetContent(buf.View())
 	default:
 		if !m.Focused {
 			return m, nil
@@ -136,8 +131,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	// TODO. Handle any other events.
+	// Handle keyboard and mouse events in the viewport
+	m.Viewport, cmd = m.Viewport.Update(msg)
+	cmds = append(cmds, cmd)
 
-	return m, nil
+	return m, tea.Batch(cmds...)
 }
 
 // func cursorToAbs(c cursor.Model) int {

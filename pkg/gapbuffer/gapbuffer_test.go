@@ -7,7 +7,8 @@ import (
 
 func TestBasic(t *testing.T) {
 	content := []rune("Hello")
-	buf := NewGapBuffer(content)
+	buf := NewGapBuffer[rune]()
+	buf.SetContent(content)
 	if buf.TotalLen() != 5 {
 		t.Fatalf("Gap buffer not initialized correctly.")
 	}
@@ -28,7 +29,8 @@ func TestBasic(t *testing.T) {
 
 func TestCursor(t *testing.T) {
 	content := []rune("HelloWorld!")
-	b := NewGapBuffer(content)
+	b := NewGapBuffer[rune]()
+	b.SetContent(content)
 	want := "Hello, World. My name is Calin."
 
 	b.CursorRight()
@@ -56,7 +58,7 @@ func TestCursor(t *testing.T) {
 }
 
 func TestCursorBounds(t *testing.T) {
-	b := NewGapBuffer([]rune{})
+	b := NewGapBuffer[rune]()
 	b.CursorLeft()
 	b.InsertElements([]rune("Oi!"))
 
@@ -84,36 +86,36 @@ func TestCursorBounds(t *testing.T) {
 }
 
 func TestRuneAt(t *testing.T) {
-	b := NewGapBuffer([]rune("Test"))
-	if b.Get(0) != 'T' {
+	b := NewGapBuffer[rune]()
+	if b.GetAbs(0) != 'T' {
 		t.FailNow()
 	}
-	if b.Get(1) != 'e' {
+	if b.GetAbs(1) != 'e' {
 		t.FailNow()
 	}
-	if b.Get(2) != 's' {
+	if b.GetAbs(2) != 's' {
 		t.FailNow()
 	}
-	if b.Get(3) != 't' {
+	if b.GetAbs(3) != 't' {
 		t.FailNow()
 	}
 }
 
 func TestDelete(t *testing.T) { //  se
-	b := NewGapBuffer([]int{1, 2, 3, 4}) // {1*, 2, 3, 4}    se
-	b.CursorRight()                      // now at 2  => {1, 2*, 3, 4}
-	if b.gapStart != 1 || b.gapEnd != 1 {
-		t.Fatalf("Unexpected gaps - gapStart: %d\tgapEnd: %d", b.gapStart, b.gapEnd)
+	b := NewGapBuffer[int]() // {1*, 2, 3, 4}    se
+	b.CursorRight()          // now at 2  => {1, 2*, 3, 4}
+	if b.GapStart != 1 || b.GapEnd != 1 {
+		t.Fatalf("Unexpected Gaps - GapStart: %d\tGapEnd: %d", b.GapStart, b.GapEnd)
 	}
 	//                             s  e
 	b.Delete() // deleted 2 => {1, _, 3*, 4}
-	if b.gapStart != 1 || b.gapEnd != 2 {
-		t.Fatalf("Unexpected gaps - gapStart: %d\tgapEnd: %d", b.gapStart, b.gapEnd)
+	if b.GapStart != 1 || b.GapEnd != 2 {
+		t.Fatalf("Unexpected Gaps - GapStart: %d\tGapEnd: %d", b.GapStart, b.GapEnd)
 	}
 	//                             s     e
 	b.Backspace() // deleted 1 => {_, _, 3*, 4}
-	if b.gapStart != 0 || b.gapEnd != 2 {
-		t.Fatalf("Unexpected gaps - gapStart: %d\tgapEnd: %d", b.gapStart, b.gapEnd)
+	if b.GapStart != 0 || b.GapEnd != 2 {
+		t.Fatalf("Unexpected Gaps - GapStart: %d\tGapEnd: %d", b.GapStart, b.GapEnd)
 	}
 
 	want := []int{3, 4}

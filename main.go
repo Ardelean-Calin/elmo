@@ -133,7 +133,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = SwitchMode(Normal)
 
 	// Switched to a new buffer
-	case textarea.EvtBufferSwitched:
+	case textarea.BufSwitchedMsg:
 		m.statusbar.SetOpenBuffer(m.textarea.CurBufPath())
 
 	// Received an error
@@ -245,7 +245,11 @@ func main() {
 	defer f.Close()
 
 	// Start Bubbletea
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	p := tea.NewProgram(
+		initialModel(),
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(), // turn on mouse support so we can track the mouse wheel
+	)
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)

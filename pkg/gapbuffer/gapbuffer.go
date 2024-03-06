@@ -83,8 +83,9 @@ func (b *GapBuffer[T]) TotalLen() int {
 	return len(b.Buffer)
 }
 
-// Get returns the element at the given position.
-func (b *GapBuffer[T]) Get(pos int) T {
+// GetAbs returns the element at the given position. Ignores gap and treats buffer
+// as a linear array
+func (b *GapBuffer[T]) GetAbs(pos int) T {
 	if pos > b.GapStart && b.gapSize() != 0 {
 		pos = (b.GapStart - pos) + b.GapEnd
 	}
@@ -215,7 +216,7 @@ func (gi *GapBufferIterator[T]) HasNext() bool {
 
 func (gi *GapBufferIterator[T]) Next() (int, T) {
 	index := gi.index
-	val := gi.gb.Get(index)
+	val := gi.gb.GetAbs(index)
 	gi.index++
 	return index, val
 }

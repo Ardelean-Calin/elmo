@@ -19,7 +19,11 @@ type Buffer struct {
 	Val      *gapbuffer.GapBuffer[rune] // Actual raw text data. Gap Buffer is a nice compromise between Piece Chain and buffer.
 	Lines    *gapbuffer.GapBuffer[int]  // The line numbers are also stored in a Gap Buffer
 	modified bool                       // Content was modified and not saved to disk
-	Cursor   cursor.Model               // Cursor position inside this buffer.
+	// TODO: Encode position inside this struct
+	// Pos int
+	// TODO: Replace cursor with bubbletea cursor.
+	//  Then, the cursor will be strictly for display only (see footer.go)
+	Cursor cursor.Model // Cursor position inside this buffer.
 }
 
 // NewBuffer constructs a new buffer from a path. If that file exists, it opens it for reading,
@@ -80,6 +84,28 @@ func (b *Buffer) String() string {
 func (b Buffer) Name() string {
 	_, name := path.Split(b.Path)
 	return name
+}
+
+func (b *Buffer) CursorDown() {
+	b.Lines.CursorRight()
+	lineIndex := b.Lines.GetAbs(b.Lines.GapEnd)
+	b.Cursor.Goto(lineIndex)
+}
+
+func (b *Buffer) CursorUp() {
+	b.Lines.CursorLeft()
+	lineIndex := b.Lines.GetAbs(b.Lines.GapEnd)
+	b.Cursor.Goto(lineIndex)
+
+}
+
+func (b *Buffer) CursorLeft() {
+	// curLineStart := b.Lines.Get()
+	b.Cursor.Left()
+}
+
+func (b *Buffer) CursorRight() {
+	b.Cursor.Right()
 }
 
 // The bufferline is composed of a linked-list
