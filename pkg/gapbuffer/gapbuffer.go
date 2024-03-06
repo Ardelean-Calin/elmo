@@ -2,17 +2,23 @@ package gapbuffer
 
 import (
 	"flag"
+	"strings"
 )
 
+// Comparable is a custom interface that both int and rune satisfy.
+type Comparable interface {
+	~int | ~rune
+}
+
 // Gap Buffer implementation. See: https://routley.io/posts/gap-buffer
-type GapBuffer[T ~int | ~rune] struct {
+type GapBuffer[T Comparable] struct {
 	Buffer   []T // NOTE: In the future I might want this to be a pointer. I avoided this for now as it looked ugly
 	GapStart int // Index of the first character *in* the gap
 	GapEnd   int // Index of the first character *after* the gap
 }
 
 // NewGapBuffer creates a new empty gapbuffer
-func NewGapBuffer[T ~int | ~rune]() GapBuffer[T] {
+func NewGapBuffer[T Comparable]() GapBuffer[T] {
 	return GapBuffer[T]{
 		Buffer:   []T{},
 		GapStart: 0,
@@ -157,9 +163,9 @@ func (b *GapBuffer[T]) CursorRight() {
 	b.GapEnd++
 }
 
-// InsertElements inserts a slice of T at the current cursor position.
-func (b *GapBuffer[T]) InsertElements(elements []T) {
-	for _, el := range elements {
+// InsertSlice inserts a slice of T at the current cursor position.
+func (b *GapBuffer[T]) InsertSlice(slice []T) {
+	for _, el := range slice {
 		b.Insert(el)
 	}
 }
@@ -194,6 +200,16 @@ func (b *GapBuffer[T]) Backspace() {
 	b.GapStart--
 }
 
+// String returns a string repesentation of this Gap Buffer.
+// NOTE: Will return gibberish for non-rune type Gap Buffers.
+func (b *GapBuffer[T]) String() string {
+	var sb strings.Builder
+	for _, x := range b.Collect() {
+		sb.WriteRune(rune(x))
+	}
+	return sb.String()
+}
+
 /* Provide an iterator interface for the GapBuffer.
    This iterator jumps over gaps.
 */
@@ -205,7 +221,7 @@ func (b *GapBuffer[T]) Iter() GapBufferIterator[T] {
 	}
 }
 
-type GapBufferIterator[T ~int | ~rune] struct {
+type GapBufferIterator[T Comparable] struct {
 	index int
 	gb    *GapBuffer[T]
 }

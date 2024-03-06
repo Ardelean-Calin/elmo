@@ -13,11 +13,11 @@ func TestBasic(t *testing.T) {
 	buf := NewGapBuffer[rune]()
 	buf.SetContent(content)
 
-	is.Equal(string(buf.Collect()), "Hello")
+	is.Equal(buf.String(), "Hello")
 	is.Equal(buf.TotalLen(), 5)
 
-	buf.InsertElements([]rune("Boo! "))
-	is.Equal(string(buf.Collect()), "Boo! Hello")
+	buf.InsertSlice([]rune("Boo! "))
+	is.Equal(buf.String(), "Boo! Hello")
 	is.Equal(buf.TotalLen(), 10)
 }
 
@@ -44,9 +44,9 @@ func TestCursor(t *testing.T) {
 	b.CursorRight()
 	b.Delete()
 	b.Insert('.')
-	b.InsertElements([]rune(" My name is Calin."))
+	b.InsertSlice([]rune(" My name is Calin."))
 
-	is.Equal(string(b.Collect()), want)
+	is.Equal(b.String(), want)
 }
 
 func TestCursorBounds(t *testing.T) {
@@ -54,10 +54,10 @@ func TestCursorBounds(t *testing.T) {
 
 	b := NewGapBuffer[rune]()
 	b.CursorLeft()
-	b.InsertElements([]rune("Oi!"))
+	b.InsertSlice([]rune("Oi!"))
 
 	want := "Oi!"
-	is.Equal(string(b.Collect()), want)
+	is.Equal(b.String(), want)
 
 	b.CursorLeft()
 	b.CursorLeft()
@@ -67,10 +67,10 @@ func TestCursorBounds(t *testing.T) {
 	b.CursorLeft()
 	b.CursorLeft()
 	b.CursorLeft()
-	b.InsertElements([]rune("1) "))
+	b.InsertSlice([]rune("1) "))
 
 	want = "1) Oi!"
-	is.Equal(string(b.Collect()), want)
+	is.Equal(b.String(), want)
 }
 
 func TestRuneAt(t *testing.T) {
