@@ -82,8 +82,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// Window was resized
 	case tea.WindowSizeMsg:
-		m.textarea.Width = msg.Width
-		m.textarea.Height = msg.Height - 2
 		m.statusbar.Width = msg.Width
 		log.Printf("Screen size changed - h: %d w: %d", msg.Height, msg.Width)
 

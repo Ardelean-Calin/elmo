@@ -5,30 +5,94 @@ import (
 	"os"
 	"path"
 
-	"github.com/Ardelean-Calin/moe/pkg/common"
 	"github.com/Ardelean-Calin/moe/pkg/gapbuffer"
 	"github.com/Ardelean-Calin/moe/ui/components/cursor"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Buffer represents an opened file.
-type Buffer struct {
-	parentNode *BufferNode
-
+// Model represents an opened file.
+type Model struct {
 	Path     string                     // Absolute path on disk.
 	fd       *os.File                   // File descriptor.
 	Val      *gapbuffer.GapBuffer[rune] // Actual raw text data. Gap Buffer is a nice compromise between Piece Chain and buffer.
 	Lines    *gapbuffer.GapBuffer[int]  // The line numbers are also stored in a Gap Buffer
-	modified bool                       // Content was modified and not saved to disk
-	// TODO: Encode position inside this struct
-	// Pos int
+	Focused  bool
+	modified bool // Content was modified and not saved to disk
+	// Used just once on load
+	ready bool
 	// TODO: Replace cursor with bubbletea cursor.
 	//  Then, the cursor will be strictly for display only (see footer.go)
-	Cursor cursor.Model // Cursor position inside this buffer.
+	Cursor   cursor.Model   // Cursor position inside this buffer.
+	viewport viewport.Model // Scrollable viewport
 }
 
-// NewBuffer constructs a new buffer from a path. If that file exists, it opens it for reading,
-// otherwise it will just open a fake file in memory
-func NewBuffer(path string) (*Buffer, error) {
+func New() Model {
+	return Model{
+		Path:     "",
+		fd:       nil,
+		Val:      nil,
+		Lines:    nil,
+		Focused:  true,
+		modified: false,
+		ready:    false,
+	}
+}
+
+func (m Model) Init() tea.Cmd {
+	return nil
+}
+
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	// On Resize, re-render the viewport
+	case tea.WindowSizeMsg:
+		if !m.ready {
+			m.viewport = viewport.New(msg.Width, msg.Height)
+			m.viewport.YPosition = 0
+			if m.Val != nil {
+				m.viewport.SetContent(m.Val.String())
+			}
+			m.ready = true
+		} else {
+			m.viewport.Height = msg.Height
+			m.viewport.Width = msg.Width
+		}
+
+	case tea.KeyMsg:
+		// TODO: Normal mode, insert mode, etc.
+		if msg.String() == "j" {
+			m.CursorDown()
+			// TODO. I can move the viewport only here if I am in normal mode.
+			// m.viewport.LineDown(1)
+		}
+		if msg.String() == "k" {
+			m.CursorUp()
+		}
+		if msg.String() == "l" {
+			m.CursorRight()
+		}
+		if msg.String() == "h" {
+			m.CursorLeft()
+		}
+	}
+
+	// Handle keyboard and mouse events in the viewport
+	m.viewport, cmd = m.viewport.Update(msg)
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) View() string {
+	return m.viewport.View()
+}
+
+// OpenFile opens the given file inside the buffer
+func (m *Model) OpenFile(path string) error {
 	var bytes []byte
 
 	fd, err := os.OpenFile(path, os.O_RDWR, 0664) // taken from helix
@@ -37,7 +101,7 @@ func NewBuffer(path string) (*Buffer, error) {
 		bytes, err = io.ReadAll(fd)
 		if err != nil {
 			// Some weird error happened. Display it.
-			return nil, err
+			return err
 		}
 	}
 
@@ -58,156 +122,41 @@ func NewBuffer(path string) (*Buffer, error) {
 	lineBuf := gapbuffer.NewGapBuffer[int]()
 	lineBuf.SetContent(indices)
 
-	return &Buffer{
-		parentNode: nil,
-		Path:       path,
-		fd:         fd,
-		Val:        &buf,
-		Lines:      &lineBuf,
-		modified:   false,
-		Cursor:     cursor.New(&buf),
-	}, nil
+	m.Path = path
+	m.fd = fd
+	m.Val = &buf
+	m.Lines = &lineBuf
+	m.modified = false
+	m.Cursor = cursor.New(&buf)
+	m.viewport.SetContent(buf.String())
 
-}
-
-// String returns the string contained in this buffer
-func (b *Buffer) String() string {
-	content := b.Val
-	if content == nil {
-		return ""
-	}
-
-	return string(b.Val.Collect())
+	return nil
 }
 
 // Name returns the title of the buffer window to display
-func (b Buffer) Name() string {
+func (b Model) Name() string {
 	_, name := path.Split(b.Path)
 	return name
 }
 
-func (b *Buffer) CursorDown() {
+func (b *Model) CursorDown() {
 	b.Lines.CursorRight()
 	lineIndex := b.Lines.GetAbs(b.Lines.GapEnd)
 	b.Cursor.Goto(lineIndex)
 }
 
-func (b *Buffer) CursorUp() {
+func (b *Model) CursorUp() {
 	b.Lines.CursorLeft()
 	lineIndex := b.Lines.GetAbs(b.Lines.GapEnd)
 	b.Cursor.Goto(lineIndex)
 
 }
 
-func (b *Buffer) CursorLeft() {
+func (b *Model) CursorLeft() {
 	// curLineStart := b.Lines.Get()
 	b.Cursor.Left()
 }
 
-func (b *Buffer) CursorRight() {
+func (b *Model) CursorRight() {
 	b.Cursor.Right()
 }
-
-// The bufferline is composed of a linked-list
-type BufferNode struct {
-	Prev   *BufferNode
-	Next   *BufferNode
-	Buffer *Buffer
-}
-
-// InsertNode inserts node `n` before node `src`
-func InsertNode(src *BufferNode, n *BufferNode) {
-	n.Prev = src.Prev
-	n.Next = src
-	src.Prev.Next = n
-	src.Prev = n
-}
-
-// ReplaceNode replaces node `old` with `new` in the Linked List
-func ReplaceNode(old *BufferNode, new *BufferNode) {
-	old.Prev.Next = new
-	old.Next.Prev = new
-	new.Next = old.Next
-	new.Prev = old.Prev
-}
-
-// Node takes a *buffer and returns a *BufferNode
-func Node(buf *Buffer) *BufferNode {
-	node := BufferNode{
-		Prev:   nil,
-		Next:   nil,
-		Buffer: buf,
-	}
-	buf.parentNode = &node
-	return &node
-}
-
-type LinkedList struct {
-	head *BufferNode
-	tail *BufferNode
-}
-
-func NewList() LinkedList {
-	head := &BufferNode{
-		Prev:   nil,
-		Next:   nil,
-		Buffer: nil,
-	}
-	tail := &BufferNode{
-		Prev:   nil,
-		Next:   nil,
-		Buffer: nil,
-	}
-	head.Next = tail
-	tail.Prev = head
-
-	return LinkedList{
-		head: head,
-		tail: tail,
-	}
-}
-
-func (l *LinkedList) AddNode(n *BufferNode) {
-	n.Prev = l.tail.Prev
-	n.Next = l.tail
-	l.tail.Prev.Next = n
-	l.tail.Prev = n
-}
-
-// NodeIterator implements the Iterator interface for LinkedList
-type NodeIterator struct {
-	n *BufferNode
-}
-
-// HasNext tells us wether the iterator still has elements to consume
-func (i *NodeIterator) HasNext() bool {
-	next := i.n.Next
-	// Only tail nodes have next equal to nil
-	return next.Next != nil
-}
-
-// Next gets the next element in this iterator
-func (i *NodeIterator) Next() *BufferNode {
-	if i.HasNext() {
-		node := i.n.Next
-		i.n = node
-		return i.n
-	}
-	return nil
-}
-
-// Creates an iterator over the LinkedList elements
-func (l *LinkedList) Iter() common.Iterator[BufferNode] {
-	return &NodeIterator{n: l.head}
-}
-
-/* Use this when GOEXPERIMENT=rangefunc is merged */
-// func (l *LinkedList) Iter() func(func(*BufferNode) bool) {
-// 	return func(yield func(*BufferNode) bool) {
-// 		for node := l.head.Next; node.Next != nil; node = node.Next {
-// 			if !yield(node) {
-// 				return
-// 			}
-// 		}
-// 	}
-// }

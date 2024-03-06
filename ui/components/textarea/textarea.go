@@ -1,14 +1,9 @@
 package textarea
 
 import (
-	"strings"
-	// "strings"
-
 	"github.com/Ardelean-Calin/moe/pkg/buffer"
 
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 /* These two will be displayed in the status bar */
@@ -40,59 +35,32 @@ func ErrorCmd(err error) tea.Cmd {
 }
 
 type Model struct {
-	Buffers       buffer.LinkedList // Linked list containing all buffers as displayed in the bufferline
-	CurBuf        *buffer.Buffer    // Currently active buffer
-	Focused       bool              // If focused, we react to events
-	Height, Width int               // Size of the textarea
-	Viewport      viewport.Model    // Scrollable viewport
+	Height, Width int          // Size of the textarea
+	Focused       bool         // If focused, we react to events
+	Buffer        buffer.Model // Currently displayed buffer
 }
 
 func New() Model {
 	return Model{
-		Buffers: buffer.NewList(),
-		CurBuf:  nil,
+		Buffer:  buffer.New(),
 		Focused: false,
 	}
 }
 
 // CurBufPath returns the path of the currently active buffer
 func (m *Model) CurBufPath() string {
-	if m.CurBuf != nil {
-		return m.CurBuf.Path
-	}
-	return ""
-}
-
-// SwitchBuffer tries to switch to the given buffer. Returns false if buffer doesn't exist
-func (m *Model) SwitchBuffer(path string) bool {
-	iterator := m.Buffers.Iter()
-	for iterator.HasNext() {
-		node := iterator.Next()
-		if node.Buffer.Path == path {
-			m.CurBuf = node.Buffer
-			return true
-		}
-	}
-
-	return false
+	return m.Buffer.Path
 }
 
 // OpenBuffer opens a new buffer for editing. If the buffer is already
 // opened in one of our tabs, we just switch to the tab.
 func (m *Model) OpenBuffer(path string) tea.Cmd {
-	// Check if buffer already is open and focus it
-	if !m.SwitchBuffer(path) {
-		// Buffer wasn't found. Create a new buffer
-		b, err := buffer.NewBuffer(path)
-		if err != nil {
-			return ErrorCmd(err)
-		}
-		n := buffer.Node(b)
-		m.Buffers.AddNode(n)
-		m.CurBuf = b
+	err := m.Buffer.OpenFile(path)
+	if err != nil {
+		return ErrorCmd(err)
 	}
 
-	// We already had the buffer opened and focused it.
+	// Notify that a new buffer has been opened.
 	return Event(BufSwitchedMsg(path))
 }
 
@@ -101,84 +69,19 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
-	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.Viewport.Width = msg.Width
-		m.Viewport.Height = msg.Height - 3
-	case tea.KeyMsg:
-		if msg.String() == "j" {
-			m.CurBuf.CursorDown()
-		}
-		if msg.String() == "k" {
-			m.CurBuf.CursorUp()
-		}
-		if msg.String() == "l" {
-			m.CurBuf.CursorRight()
-		}
-		if msg.String() == "h" {
-			m.CurBuf.CursorLeft()
-		}
-	// case buffer.BufferUpdateMsg:
-	// A buffer's content has been updated...
-	//     m.Viewport.SetContent(buf.View())
-	default:
-		if !m.Focused {
-			return m, nil
-		}
+	if m.Buffer.Focused {
+		m.Buffer, cmd = m.Buffer.Update(msg)
 	}
 
-	// TODO. Handle any other events.
-	// Handle keyboard and mouse events in the viewport
-	m.Viewport, cmd = m.Viewport.Update(msg)
-	cmds = append(cmds, cmd)
-
-	return m, tea.Batch(cmds...)
+	return m, cmd
 }
 
-// func cursorToAbs(c cursor.Model) int {
-// 	c.Row
-// }
-
 func (m Model) View() string {
-	// Render the buffer line
-	bufferline := ""
+	var bufferContent string
 
-	iterator := m.Buffers.Iter()
-	for iterator.HasNext() {
-		node := iterator.Next()
-		style := lipgloss.NewStyle().Padding(0, 1)
-		if node.Buffer == m.CurBuf {
-			style = style.Reverse(true)
-		}
-		bufferline += style.
-			Render(node.Buffer.Name())
-	}
+	bufferContent = m.Buffer.View()
 
-	if m.CurBuf != nil {
-		// Render the contents to screen, as well as the cursor
-		var sb strings.Builder
-
-		iterator := m.CurBuf.Val.Iter()
-		for iterator.HasNext() {
-			index, r := iterator.Next()
-			if index == m.CurBuf.Cursor.Pos {
-				sb.WriteString(m.CurBuf.Cursor.View())
-				if r == '\n' {
-					sb.WriteRune('\n')
-				}
-			} else {
-				sb.WriteRune(r)
-			}
-		}
-		// I don't like this approach, since I always render a full screen
-		// and have to keep it into memory. I could use the newly defined
-		// lineBuf
-		m.Viewport.SetContent(sb.String())
-	} else {
-		m.Viewport.SetContent("")
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, bufferline, m.Viewport.View())
+	return bufferContent
 }
