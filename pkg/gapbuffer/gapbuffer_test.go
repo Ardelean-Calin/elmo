@@ -1,33 +1,29 @@
 package gapbuffer
 
 import (
-	"slices"
 	"testing"
+
+	"github.com/matryer/is"
 )
 
 func TestBasic(t *testing.T) {
+	is := is.New(t)
+
 	content := []rune("Hello")
 	buf := NewGapBuffer[rune]()
 	buf.SetContent(content)
-	if buf.TotalLen() != 5 {
-		t.Fatalf("Gap buffer not initialized correctly.")
-	}
-	want := "Hello"
-	if string(buf.Collect()) != want {
-		t.Fatalf("buf.String() failed. expected: %s, got: %s", want, string(buf.Collect()))
-	}
+
+	is.Equal(string(buf.Collect()), "Hello")
+	is.Equal(buf.TotalLen(), 5)
 
 	buf.InsertElements([]rune("Boo! "))
-	want = "Boo! Hello"
-	if string(buf.Collect()) != want {
-		t.Fatalf("InsertElements failed. expected: %s, got: %s", want, string(buf.Collect()))
-	}
-	if buf.TotalLen() != 10 {
-		t.Fatalf("Gap buffer length - expected: %d, got %d", 10, buf.TotalLen())
-	}
+	is.Equal(string(buf.Collect()), "Boo! Hello")
+	is.Equal(buf.TotalLen(), 10)
 }
 
 func TestCursor(t *testing.T) {
+	is := is.New(t)
+
 	content := []rune("HelloWorld!")
 	b := NewGapBuffer[rune]()
 	b.SetContent(content)
@@ -50,23 +46,18 @@ func TestCursor(t *testing.T) {
 	b.Insert('.')
 	b.InsertElements([]rune(" My name is Calin."))
 
-	got := string(b.Collect())
-	if got != want {
-		t.Fatalf("Cursor test failed. expected: %s, got %s", want, got)
-	}
-
+	is.Equal(string(b.Collect()), want)
 }
 
 func TestCursorBounds(t *testing.T) {
+	is := is.New(t)
+
 	b := NewGapBuffer[rune]()
 	b.CursorLeft()
 	b.InsertElements([]rune("Oi!"))
 
 	want := "Oi!"
-	got := string(b.Collect())
-	if got != want {
-		t.Fatalf("Cursor Bounds Test failed. expected: %s, got %s", want, got)
-	}
+	is.Equal(string(b.Collect()), want)
 
 	b.CursorLeft()
 	b.CursorLeft()
@@ -79,50 +70,42 @@ func TestCursorBounds(t *testing.T) {
 	b.InsertElements([]rune("1) "))
 
 	want = "1) Oi!"
-	got = string(b.Collect())
-	if got != want {
-		t.Fatalf("Cursor Bounds Test failed. expected: %s, got %s", want, got)
-	}
+	is.Equal(string(b.Collect()), want)
 }
 
 func TestRuneAt(t *testing.T) {
+	is := is.New(t)
+
 	b := NewGapBuffer[rune]()
-	if b.GetAbs(0) != 'T' {
-		t.FailNow()
-	}
-	if b.GetAbs(1) != 'e' {
-		t.FailNow()
-	}
-	if b.GetAbs(2) != 's' {
-		t.FailNow()
-	}
-	if b.GetAbs(3) != 't' {
-		t.FailNow()
-	}
+	b.SetContent([]rune("Test"))
+
+	is.Equal(b.GetAbs(0), 'T')
+	is.Equal(b.GetAbs(1), 'e')
+	is.Equal(b.GetAbs(2), 's')
+	is.Equal(b.GetAbs(3), 't')
 }
 
-func TestDelete(t *testing.T) { //  se
+func TestDelete(t *testing.T) {
+	is := is.New(t)
+
 	b := NewGapBuffer[int]() // {1*, 2, 3, 4}    se
-	b.CursorRight()          // now at 2  => {1, 2*, 3, 4}
-	if b.GapStart != 1 || b.GapEnd != 1 {
-		t.Fatalf("Unexpected Gaps - GapStart: %d\tGapEnd: %d", b.GapStart, b.GapEnd)
-	}
+	b.SetContent([]int{1, 2, 3, 4})
+	is.Equal(b.GapStart, 0)
+	is.Equal(b.GapEnd, 0)
+
+	b.CursorRight() // now at 2  => {1, 2*, 3, 4}
+	is.Equal(b.GapStart, 1)
+	is.Equal(b.GapEnd, 1)
 	//                             s  e
 	b.Delete() // deleted 2 => {1, _, 3*, 4}
-	if b.GapStart != 1 || b.GapEnd != 2 {
-		t.Fatalf("Unexpected Gaps - GapStart: %d\tGapEnd: %d", b.GapStart, b.GapEnd)
-	}
+	is.Equal(b.GapStart, 1)
+	is.Equal(b.GapEnd, 2)
 	//                             s     e
 	b.Backspace() // deleted 1 => {_, _, 3*, 4}
-	if b.GapStart != 0 || b.GapEnd != 2 {
-		t.Fatalf("Unexpected Gaps - GapStart: %d\tGapEnd: %d", b.GapStart, b.GapEnd)
-	}
+	is.Equal(b.GapStart, 0)
+	is.Equal(b.GapEnd, 2)
 
 	want := []int{3, 4}
 	got := b.Collect()
-
-	if !slices.Equal(got, want) {
-		t.Fatalf("Backspace delete failed. Expected: %v - Got: %v", want, got)
-	}
-
+	is.Equal(got, want)
 }
