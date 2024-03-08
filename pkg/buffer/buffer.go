@@ -1,6 +1,7 @@
 package buffer
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -221,8 +222,14 @@ func CursorGoto(pos int) tea.Cmd {
 func Render(m *Model) tea.Cmd {
 	var sb strings.Builder
 	runes := m.GapBuf.Collect()
-	runes = append(runes, '\n')
+
 	for i, r := range runes {
+		// Render the line number if the current character is a newline
+		lineNo, ok := m.Lines.Find(i)
+		if ok == true {
+			sb.WriteString(fmt.Sprintf("%4d  ", lineNo+1))
+		}
+
 		if i == m.CursorPos {
 			m.Cursor.Focus()
 			// Newline, just render an empty cursor
