@@ -16,6 +16,7 @@ import (
 // Contains the new cursor coordinates
 type CursorMoveMsg int
 type UpdateViewportMsg string
+type LineChangedMsg int
 
 // Model represents an opened file.
 type Model struct {
@@ -29,22 +30,24 @@ type Model struct {
 	ready bool
 	// TODO: Replace cursor with bubbletea cursor.
 	//  Then, the cursor will be strictly for display only (see footer.go)
-	Cursor    cursor.Model   // Cursor model
-	CursorPos int            // Current cursor position
-	viewport  viewport.Model // Scrollable viewport
+	Cursor           cursor.Model // Cursor model
+	CursorPos        int          // Current cursor position
+	CurrentLineIndex int
+	viewport         viewport.Model // Scrollable viewport
 }
 
 func New() Model {
 	return Model{
-		Path:      "",
-		fd:        nil,
-		GapBuf:    gapbuffer.NewGapBuffer[rune](),
-		Lines:     gapbuffer.NewGapBuffer[int](),
-		Focused:   true,
-		modified:  false,
-		ready:     false,
-		Cursor:    cursor.New(),
-		CursorPos: 0,
+		Path:             "",
+		fd:               nil,
+		GapBuf:           gapbuffer.NewGapBuffer[rune](),
+		Lines:            gapbuffer.NewGapBuffer[int](),
+		Focused:          true,
+		modified:         false,
+		ready:            false,
+		Cursor:           cursor.New(),
+		CursorPos:        0,
+		CurrentLineIndex: 0,
 	}
 }
 
@@ -104,12 +107,26 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		pos := int(msg)
 		m.CursorPos = pos
 		cmds = append(cmds, Render(&m))
+
+	// The current line has changed
+	case LineChangedMsg:
+		m.CurrentLineIndex = int(msg)
+		// Calculate viewport boundaries
+		viewStart := m.viewport.YOffset + 5
+		viewEnd := m.viewport.YOffset + m.viewport.Height - 5
+
+		if m.CurrentLineIndex < viewStart {
+			m.viewport.SetYOffset(m.CurrentLineIndex - 5 + 1)
+		} else if m.CurrentLineIndex > viewEnd {
+			m.viewport.SetYOffset(m.CurrentLineIndex - m.viewport.Height + 5)
+		}
 	}
 
 	// Handle keyboard and mouse events in the viewport
 	m.viewport, cmd = m.viewport.Update(msg)
 	cmds = append(cmds, cmd)
 
+	// Show the cursor
 	m.Cursor, cmd = m.Cursor.Update(msg)
 	cmds = append(cmds, cmd)
 
@@ -169,14 +186,18 @@ func (b Model) Name() string {
 
 func CursorDown(m *Model, n int) tea.Cmd {
 	m.Lines.CursorRight()
-	lineIndex := m.Lines.GetAbs(m.Lines.GapEnd)
-	return CursorGoto(lineIndex)
+	line := m.Lines.Pos()
+
+	index := m.Lines.GetAbs(line)
+	return tea.Batch(CursorGoto(index), ChangeLine(line))
 }
 
 func CursorUp(m *Model, n int) tea.Cmd {
 	m.Lines.CursorLeft()
-	lineIndex := m.Lines.GetAbs(m.Lines.GapEnd)
-	return CursorGoto(lineIndex)
+	line := m.Lines.Pos()
+
+	index := m.Lines.GetAbs(line)
+	return tea.Batch(CursorGoto(index), ChangeLine(line))
 }
 
 func CursorLeft(m *Model, n int) tea.Cmd {
@@ -196,9 +217,12 @@ func CursorGoto(pos int) tea.Cmd {
 	return func() tea.Msg { return CursorMoveMsg(pos) }
 }
 
+// Render is the command which renders our viewpoint content to screen
 func Render(m *Model) tea.Cmd {
 	var sb strings.Builder
-	for i, r := range m.GapBuf.Collect() {
+	runes := m.GapBuf.Collect()
+	runes = append(runes, '\n')
+	for i, r := range runes {
 		if i == m.CursorPos {
 			m.Cursor.Focus()
 			// Newline, just render an empty cursor
@@ -218,5 +242,11 @@ func Render(m *Model) tea.Cmd {
 
 	return func() tea.Msg {
 		return UpdateViewportMsg(content)
+	}
+}
+
+func ChangeLine(i int) tea.Cmd {
+	return func() tea.Msg {
+		return LineChangedMsg(i)
 	}
 }

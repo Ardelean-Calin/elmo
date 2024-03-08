@@ -11,7 +11,6 @@ type StatusMsg string
 type ErrorMsg error
 
 type BufSwitchedMsg string
-type LineChangedMsg int
 
 // Return a message as an event
 func Event(T any) tea.Cmd {

@@ -39,6 +39,11 @@ func (b *GapBuffer[T]) Collect() []T {
 	return dest
 }
 
+// Pos returns the current position inside the Gap Buffer
+func (b *GapBuffer[T]) Pos() int {
+	return b.GapStart
+}
+
 // FindAll returns a slice with the indices of all found items inside the gap buffer
 func (b *GapBuffer[T]) FindAll(val T) []int {
 	var results []int
@@ -92,9 +97,10 @@ func (b *GapBuffer[T]) TotalLen() int {
 // GetAbs returns the element at the given position. Ignores gap and treats buffer
 // as a linear array
 func (b *GapBuffer[T]) GetAbs(pos int) T {
-	if pos > b.GapStart && b.gapSize() != 0 {
-		pos = (b.GapStart - pos) + b.GapEnd
+	if pos > b.GapStart {
+		pos += b.gapSize()
 	}
+	pos = min(b.Len()-1, pos)
 
 	return b.Buffer[pos]
 }
@@ -137,6 +143,7 @@ func (b *GapBuffer[T]) CursorGoto(pos int) (actualPos int) {
 }
 
 // CursorRight moves the cursor left one character.
+// NOTE: The cursor is always the start of the gap
 func (b *GapBuffer[T]) CursorLeft() {
 	// We are already at the start!
 	if b.GapStart == 0 {
@@ -151,6 +158,7 @@ func (b *GapBuffer[T]) CursorLeft() {
 }
 
 // CursorRight moves the cursor right one character.
+// NOTE: The cursor is always the start of the gap
 func (b *GapBuffer[T]) CursorRight() {
 	// We are already at the end!
 	if b.GapEnd == len(b.Buffer) {
