@@ -121,6 +121,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	// An action such as open, write, etc.
+	// We process the action and switch the mode
 	case footer.SubmitMsg:
 		cmd = tea.Batch(
 			ParseAction(msg),
@@ -157,12 +158,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Do stuff, for example, enable absolute line mode in the editor
 			m.textarea.Focused = true
 			m.statusbar.InsertMode()
+			m.footer.Blur()
 		case Normal:
 			m.footer.Blur()
 			m.statusbar.NormalMode()
 			m.textarea.Focused = false
 		case Select:
 			m.statusbar.SelectMode()
+			m.footer.Blur()
 		case Command:
 			m.footer.Focus()
 		}

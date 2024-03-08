@@ -55,13 +55,13 @@ func (m *Model) CurBufPath() string {
 // OpenBuffer opens a new buffer for editing. If the buffer is already
 // opened in one of our tabs, we just switch to the tab.
 func (m *Model) OpenBuffer(path string) tea.Cmd {
-	err := m.Buffer.OpenFile(path)
+	cmd, err := m.Buffer.OpenFile(path)
 	if err != nil {
 		return ErrorCmd(err)
 	}
 
 	// Notify that a new buffer has been opened.
-	return Event(BufSwitchedMsg(path))
+	return tea.Batch(cmd, Event(BufSwitchedMsg(path)))
 }
 
 func (m Model) Init() tea.Cmd {

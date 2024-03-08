@@ -86,7 +86,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	var s string
+	var s string = ""
 	if m.error != "" {
 		s += m.errorStyle.Render(m.error)
 	} else if m.status != "" {
