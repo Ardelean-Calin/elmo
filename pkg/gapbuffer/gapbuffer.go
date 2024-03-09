@@ -39,6 +39,20 @@ func (b *GapBuffer[T]) Collect() []T {
 	return dest
 }
 
+func (b *GapBuffer[T]) Split(sep T) [][]T {
+	var splits [][]T = make([][]T, len(b.FindAll(sep)))
+	index := 0
+	for _, r := range b.Collect() {
+		if r == sep {
+			index++
+		} else {
+			splits[index] = append(splits[index], r)
+		}
+	}
+
+	return splits
+}
+
 // Pos returns the current position inside the Gap Buffer
 func (b *GapBuffer[T]) Pos() int {
 	return b.GapStart
@@ -113,7 +127,8 @@ func (b *GapBuffer[T]) GetAbs(pos int) T {
 	if pos > b.GapStart {
 		pos += b.gapSize()
 	}
-	pos = min(b.Len()-1, pos)
+
+	pos = clamp(pos, 0, b.Len()-1)
 
 	return b.Buffer[pos]
 }
@@ -256,4 +271,9 @@ func (gi *GapBufferIterator[T]) Next() (int, T) {
 	val := gi.gb.GetAbs(index)
 	gi.index++
 	return index, val
+}
+
+// clamp limits the value of val between low and high
+func clamp(val, low, high int) int {
+	return max(low, min(val, high))
 }

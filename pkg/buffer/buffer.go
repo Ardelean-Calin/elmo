@@ -12,10 +12,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Contains the new cursor coordinates
-type CursorMoveMsg int
 type UpdateViewportMsg string
 type LineChangedMsg int
 
@@ -31,24 +31,27 @@ type Model struct {
 	ready bool
 	// TODO: Replace cursor with bubbletea cursor.
 	//  Then, the cursor will be strictly for display only (see footer.go)
-	Cursor           cursor.Model // Cursor model
-	CursorPos        int          // Current cursor position
-	CurrentLineIndex int
-	viewport         viewport.Model // Scrollable viewport
+	Cursor               cursor.Model // Cursor model
+	CursorPos, LineIndex int          // Current cursor position
+	// Horizontal position of the cursor within the line
+	// A move down or up will try to keep this position
+	CursorPosH int
+	viewport   viewport.Model // Scrollable viewport
 }
 
 func New() Model {
 	return Model{
-		Path:             "",
-		fd:               nil,
-		GapBuf:           gapbuffer.NewGapBuffer[rune](),
-		Lines:            gapbuffer.NewGapBuffer[int](),
-		Focused:          true,
-		modified:         false,
-		ready:            false,
-		Cursor:           cursor.New(),
-		CursorPos:        0,
-		CurrentLineIndex: 0,
+		Path:       "",
+		fd:         nil,
+		GapBuf:     gapbuffer.NewGapBuffer[rune](),
+		Lines:      gapbuffer.NewGapBuffer[int](),
+		Focused:    true,
+		modified:   false,
+		ready:      false,
+		Cursor:     cursor.New(),
+		CursorPos:  0,
+		LineIndex:  0,
+		CursorPosH: 0,
 	}
 }
 
@@ -81,8 +84,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// TODO: Normal mode, insert mode, etc.
 		if msg.String() == "j" {
 			cmd = CursorDown(&m, 1)
-			// TODO. I can move the viewport only here if I am in normal mode.
-			// m.viewport.LineDown(1)
 		}
 		if msg.String() == "k" {
 			cmd = CursorUp(&m, 1)
@@ -103,23 +104,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		content := string(msg)
 		m.viewport.SetContent(content)
 
-	// Cursor has moved. We regenerate the content of the viewport
-	case CursorMoveMsg:
-		pos := int(msg)
-		m.CursorPos = pos
-		cmds = append(cmds, Render(&m))
-
 	// The current line has changed
 	case LineChangedMsg:
-		m.CurrentLineIndex = int(msg)
 		// Calculate viewport boundaries
 		viewStart := m.viewport.YOffset + 5
-		viewEnd := m.viewport.YOffset + m.viewport.Height - 5
+		viewEnd := m.viewport.YOffset + m.viewport.VisibleLineCount() - 5
 
-		if m.CurrentLineIndex < viewStart {
-			m.viewport.SetYOffset(m.CurrentLineIndex - 5 + 1)
-		} else if m.CurrentLineIndex > viewEnd {
-			m.viewport.SetYOffset(m.CurrentLineIndex - m.viewport.Height + 5)
+		if m.LineIndex < viewStart {
+			m.viewport.SetYOffset(m.LineIndex - 5 + 1)
+		} else if m.LineIndex > viewEnd {
+			m.viewport.SetYOffset(m.LineIndex - m.viewport.VisibleLineCount() + 5)
 		}
 	}
 
@@ -135,7 +129,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	// The buffer View method also needs to render the cursor
 	return m.viewport.View()
 }
 
@@ -153,9 +146,13 @@ func (m *Model) OpenFile(path string) (tea.Cmd, error) {
 		}
 	}
 
+	// Temporary. Until I fix rendering tabs and horizontal positions
+	text := string(bytes)
+	text = strings.ReplaceAll(text, "\t", "    ")
+
 	// Ok by this point I either have a fd with some bytes or a nil fd and nil bytes
 	// Create a gap buffer with the contents of the file
-	content := []rune(string(bytes))
+	content := []rune(text)
 	buf := gapbuffer.NewGapBuffer[rune]()
 	buf.SetContent(content)
 	// And create a gap buffer with all the newline indices. This way I can simply
@@ -185,75 +182,106 @@ func (b Model) Name() string {
 	return name
 }
 
-func CursorDown(m *Model, n int) tea.Cmd {
-	m.Lines.CursorRight()
-	line := m.Lines.Pos()
+func LineChanged() tea.Cmd {
+	return func() tea.Msg {
+		return LineChangedMsg(0)
+	}
+}
 
-	index := m.Lines.GetAbs(line)
-	return tea.Batch(CursorGoto(index), ChangeLine(line))
+func CursorDown(m *Model, n int) tea.Cmd {
+	// Increment line position
+	m.LineIndex = min(m.LineIndex+1, m.Lines.Count()-1)
+	// Going down will move the cursor until the next line *plus* the horizontal cursor
+	// position
+	m.CursorPos = m.Lines.GetAbs(m.LineIndex)
+	// TODO. Cursor pos needs to be min(pos + hpos, lineLength)
+	// For that, I need an easy way to determine line lenfth
+	if m.CursorPos+m.CursorPosH <= m.Lines.GetAbs(m.LineIndex+1) {
+		m.CursorPos += m.CursorPosH
+	}
+
+	return tea.Batch(LineChanged(), Render(m))
 }
 
 func CursorUp(m *Model, n int) tea.Cmd {
-	m.Lines.CursorLeft()
-	line := m.Lines.Pos()
+	m.LineIndex = max(m.LineIndex-1, 0)
+	m.CursorPos = m.Lines.GetAbs(m.LineIndex)
+	// TODO. Cursor pos needs to be min(pos + hpos, lineLength)
+	if m.CursorPos+m.CursorPosH <= m.Lines.GetAbs(m.LineIndex+1) {
+		m.CursorPos += m.CursorPosH
+	}
 
-	index := m.Lines.GetAbs(line)
-	return tea.Batch(CursorGoto(index), ChangeLine(line))
+	return tea.Batch(LineChanged(), Render(m))
 }
 
 func CursorLeft(m *Model, n int) tea.Cmd {
+	// Simple algorithm. Going left decreases the cursor position and updates
+	// the cursor's horizontal position
 	if m.CursorPos == 0 {
 		return nil
 	}
+	m.CursorPos -= 1
+	m.CursorPosH = m.CursorPos - m.Lines.GetAbs(m.LineIndex)
 
-	return CursorGoto(m.CursorPos - n)
+	return Render(m)
 }
 
 func CursorRight(m *Model, n int) tea.Cmd {
+	//Same for going right
 	// TODO check bounds
-	return CursorGoto(m.CursorPos + n)
-}
+	m.CursorPos += 1
+	m.CursorPosH = m.CursorPos - m.Lines.GetAbs(m.LineIndex)
 
-func CursorGoto(pos int) tea.Cmd {
-	return func() tea.Msg { return CursorMoveMsg(pos) }
+	return Render(m)
 }
 
 // Render is the command which renders our viewpoint content to screen
 func Render(m *Model) tea.Cmd {
 	var sb strings.Builder
-	runes := m.GapBuf.Collect()
+	sty := lipgloss.NewStyle().Width(m.viewport.Width)
 
-	for i, r := range runes {
-		// Render the line number if the current character is a newline
-		lineNo, ok := m.Lines.Find(i)
-		if ok == true {
-			sb.WriteString(fmt.Sprintf("%4d  ", lineNo+1))
+	lines := m.GapBuf.Split('\n')
+
+	absIndex := 0
+	for index, line := range lines {
+		var lineBuilder strings.Builder
+
+		lineBuilder.WriteString(fmt.Sprintf("%4d  ", index+1))
+
+		sty.UnsetBackground()
+		if index == m.LineIndex {
+			sty = sty.Background(lipgloss.Color("#2a2b3c"))
 		}
 
-		if i == m.CursorPos {
-			m.Cursor.Focus()
-			// Newline, just render an empty cursor
-			if r == 10 {
-				m.Cursor.SetChar(" ")
-				sb.WriteString(m.Cursor.View())
-				sb.WriteRune(r)
-			} else {
+		// Build a line with cursor rendering and line background
+		relpos := m.CursorPos - absIndex
+		for rIndex, r := range line {
+			if rIndex == relpos {
+				m.Cursor.Focus()
 				m.Cursor.SetChar(string(r))
-				sb.WriteString(m.Cursor.View())
+
+				lineBuilder.WriteString(m.Cursor.View())
+			} else {
+				m.Cursor.Blur()
+				textStyle := sty.Copy().UnsetWidth()
+				lineBuilder.WriteString(textStyle.Render(string(r)))
 			}
-		} else {
-			sb.WriteRune(r)
 		}
+		// if relpos >= 0 && relpos < len(line) {
+		// 	m.Cursor.SetChar(string(line[relpos]))
+		// 	m.Cursor.Focus()
+
+		// 	line[relpos] = 'x'
+		// }
+
+		sb.WriteString(
+			sty.Render(lineBuilder.String()),
+		)
+		sb.WriteString("\n")
+		absIndex += len(line) + 1
 	}
-	content := sb.String()
 
 	return func() tea.Msg {
-		return UpdateViewportMsg(content)
-	}
-}
-
-func ChangeLine(i int) tea.Cmd {
-	return func() tea.Msg {
-		return LineChangedMsg(i)
+		return UpdateViewportMsg(sb.String())
 	}
 }
