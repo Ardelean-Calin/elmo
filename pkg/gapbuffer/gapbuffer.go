@@ -59,7 +59,8 @@ func (b *GapBuffer[T]) Pos() int {
 }
 
 // Find finds the first occurence of the given value inside the gapbuffer
-// and returns its index
+// and returns its index.
+// Note: Find returns the absolute index, ignoring gap
 func (b *GapBuffer[T]) Find(val T) (i int, ok bool) {
 	for i, v := range b.Collect() {
 		if v == val {
@@ -72,6 +73,7 @@ func (b *GapBuffer[T]) Find(val T) (i int, ok bool) {
 }
 
 // FindAll returns a slice with the indices of all found items inside the gap buffer
+// Note: FindAll returns the absolute index, ignoring gap
 func (b *GapBuffer[T]) FindAll(val T) []int {
 	var results []int
 	for index, v := range b.Collect() {

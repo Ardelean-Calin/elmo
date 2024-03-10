@@ -191,14 +191,10 @@ func LineChanged() tea.Cmd {
 func CursorDown(m *Model, n int) tea.Cmd {
 	// Increment line position
 	m.LineIndex = min(m.LineIndex+1, m.Lines.Count()-1)
-	// Going down will move the cursor until the next line *plus* the horizontal cursor
-	// position
+	// Going down will move the cursor until the next line *plus* the horizontal cursor position
+	// Cursor pos needs to be min(pos + hpos, lineLength)
 	m.CursorPos = m.Lines.GetAbs(m.LineIndex)
-	// TODO. Cursor pos needs to be min(pos + hpos, lineLength)
-	// For that, I need an easy way to determine line lenfth
-	if m.CursorPos+m.CursorPosH <= m.Lines.GetAbs(m.LineIndex+1) {
-		m.CursorPos += m.CursorPosH
-	}
+	m.CursorPos = min(m.CursorPos+m.CursorPosH, m.Lines.GetAbs(m.LineIndex+1)-1)
 
 	return tea.Batch(LineChanged(), Render(m))
 }
@@ -206,10 +202,7 @@ func CursorDown(m *Model, n int) tea.Cmd {
 func CursorUp(m *Model, n int) tea.Cmd {
 	m.LineIndex = max(m.LineIndex-1, 0)
 	m.CursorPos = m.Lines.GetAbs(m.LineIndex)
-	// TODO. Cursor pos needs to be min(pos + hpos, lineLength)
-	if m.CursorPos+m.CursorPosH <= m.Lines.GetAbs(m.LineIndex+1) {
-		m.CursorPos += m.CursorPosH
-	}
+	m.CursorPos = min(m.CursorPos+m.CursorPosH, m.Lines.GetAbs(m.LineIndex+1)-1)
 
 	return tea.Batch(LineChanged(), Render(m))
 }
@@ -246,9 +239,11 @@ func Render(m *Model) tea.Cmd {
 	for index, line := range lines {
 		var lineBuilder strings.Builder
 
+		// Write line numbers
 		lineBuilder.WriteString(fmt.Sprintf("%4d  ", index+1))
 
 		sty.UnsetBackground()
+		// Highlight current line
 		if index == m.LineIndex {
 			sty = sty.Background(lipgloss.Color("#2a2b3c"))
 		}
@@ -262,22 +257,22 @@ func Render(m *Model) tea.Cmd {
 
 				lineBuilder.WriteString(m.Cursor.View())
 			} else {
-				m.Cursor.Blur()
 				textStyle := sty.Copy().UnsetWidth()
 				lineBuilder.WriteString(textStyle.Render(string(r)))
 			}
 		}
-		// if relpos >= 0 && relpos < len(line) {
-		// 	m.Cursor.SetChar(string(line[relpos]))
-		// 	m.Cursor.Focus()
 
-		// 	line[relpos] = 'x'
-		// }
+		// Just one special case, if we are at the end of a line
+		// render an empty character
+		if relpos == len(line) {
+			m.Cursor.SetChar(" ")
+			lineBuilder.WriteString(m.Cursor.View())
+		}
 
 		sb.WriteString(
 			sty.Render(lineBuilder.String()),
 		)
-		sb.WriteString("\n")
+		sb.WriteRune('\n')
 		absIndex += len(line) + 1
 	}
 
