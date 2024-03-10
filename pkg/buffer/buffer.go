@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/Ardelean-Calin/moe/pkg/gapbuffer"
+	"github.com/Ardelean-Calin/elmo/pkg/gapbuffer"
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"

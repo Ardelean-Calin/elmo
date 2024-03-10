@@ -1,7 +1,7 @@
 package textarea
 
 import (
-	"github.com/Ardelean-Calin/moe/pkg/buffer"
+	"github.com/Ardelean-Calin/elmo/pkg/buffer"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

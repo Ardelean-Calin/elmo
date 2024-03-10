@@ -5,9 +5,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/Ardelean-Calin/moe/ui/components/footer"
-	"github.com/Ardelean-Calin/moe/ui/components/statusbar"
-	"github.com/Ardelean-Calin/moe/ui/components/textarea"
+	"github.com/Ardelean-Calin/elmo/ui/components/footer"
+	"github.com/Ardelean-Calin/elmo/ui/components/statusbar"
+	"github.com/Ardelean-Calin/elmo/ui/components/textarea"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

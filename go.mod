@@ -1,4 +1,4 @@
-module github.com/Ardelean-Calin/moe
+module github.com/Ardelean-Calin/elmo
 
 go 1.21.7
 
