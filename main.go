@@ -70,7 +70,16 @@ func ErrorCmd(errorMessage string) tea.Cmd {
 	}
 }
 
+func OpenBufferCmd(path string) tea.Cmd {
+	return func() tea.Msg {
+		return OpenBufferMsg(path)
+	}
+}
+
 func (m Model) Init() tea.Cmd {
+	if len(os.Args) > 1 {
+		return OpenBufferCmd(os.Args[1])
+	}
 	// Just return `nil`, which means "no I/O right now, please."
 	return nil
 }
