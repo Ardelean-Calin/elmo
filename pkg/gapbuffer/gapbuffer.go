@@ -108,7 +108,7 @@ func (b *GapBuffer[T]) growGap() {
 	b.GapEnd = b.GapStart + gapSize
 }
 
-// Count returns the size of the raw text, excliding the gap
+// Count returns the size of the raw text, excluding the gap
 func (b *GapBuffer[T]) Count() int {
 	return len(b.Buffer) - b.gapSize()
 }
@@ -123,6 +123,25 @@ func (b *GapBuffer[T]) TotalLen() int {
 	return len(b.Buffer)
 }
 
+// Cursor returns the current cursor position
+func (b *GapBuffer[T]) Cursor() int {
+	return b.GapStart
+}
+
+// Current returns the element at the current cursor position
+func (b *GapBuffer[T]) Current() T {
+	return b.Buffer[b.GapStart]
+}
+
+// Next returns the next element after the cursor
+func (b *GapBuffer[T]) Next() T {
+	if b.GapEnd+1 >= b.Len() {
+		return b.Current()
+	}
+
+	return b.Buffer[b.GapEnd+1]
+}
+
 // GetAbs returns the element at the given position. Ignores gap and treats buffer
 // as a linear array
 func (b *GapBuffer[T]) GetAbs(pos int) T {
@@ -130,7 +149,7 @@ func (b *GapBuffer[T]) GetAbs(pos int) T {
 		pos += b.gapSize()
 	}
 
-	pos = clamp(pos, 0, b.Len()-1)
+	pos = clamp(pos, 0, b.Len())
 
 	return b.Buffer[pos]
 }
@@ -191,7 +210,7 @@ func (b *GapBuffer[T]) CursorLeft() {
 // NOTE: The cursor is always the start of the gap
 func (b *GapBuffer[T]) CursorRight() {
 	// We are already at the end!
-	if b.GapEnd == len(b.Buffer) {
+	if b.GapEnd == len(b.Buffer)-1 {
 		return
 	}
 
@@ -275,7 +294,7 @@ func (gi *GapBufferIterator[T]) Next() (int, T) {
 	return index, val
 }
 
-// clamp limits the value of val between low and high
+// clamp limits the value of val between [low, high)
 func clamp(val, low, high int) int {
-	return max(low, min(val, high))
+	return max(low, min(val, high-1))
 }
