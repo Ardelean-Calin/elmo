@@ -71,12 +71,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			// Clear the default keybinds for up/down using k/j
 			m.viewport.KeyMap.Down = key.NewBinding()
 			m.viewport.KeyMap.Up = key.NewBinding()
-			// Render the buffer content
-			cmds = append(cmds, Render(&m))
 		} else {
 			m.viewport.Height = msg.Height - 2
 			m.viewport.Width = msg.Width
 		}
+		// Render the buffer content
+		cmds = append(cmds, Render(&m))
 
 	case tea.KeyMsg:
 		// TODO: Normal mode, insert mode, etc.
