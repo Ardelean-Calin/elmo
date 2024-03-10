@@ -247,14 +247,16 @@ func Render(m *Model) tea.Cmd {
 	for lineNo, bufIndex := range m.Lines.Collect() {
 		var lineBuilder strings.Builder
 
-		// Write line numbers
-		lineBuilder.WriteString(fmt.Sprintf("%4d  ", lineNo+1))
-
 		// Highlight the current line
 		sty.UnsetBackground()
+		lineNoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#3c3d4f"))
 		if lineNo == m.Lines.GapStart {
 			sty = sty.Background(lipgloss.Color("#2a2b3c"))
+			lineNoStyle = lineNoStyle.Foreground(lipgloss.Color("#878ebf"))
 		}
+
+		// Write line numbers
+		lineBuilder.WriteString(lineNoStyle.Render(fmt.Sprintf("%4d  ", lineNo+1)))
 
 		// Now we render the text, then the remaining
 		for {
