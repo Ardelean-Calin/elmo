@@ -242,23 +242,21 @@ func CursorRight(m *Model, n int) tea.Cmd {
 // Render is the command which renders our viewpoint content to screen
 func Render(m *Model) tea.Cmd {
 	var sb strings.Builder
-	sty := lipgloss.NewStyle().Width(m.viewport.Width)
 
 	for lineNo, bufIndex := range m.Lines.Collect() {
 		var lineBuilder strings.Builder
 
 		// Highlight the current line
-		sty.UnsetBackground()
-		lineNoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#3c3d4f"))
+		lineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#3c3d4f"))
 		if lineNo == m.Lines.GapStart {
-			sty = sty.Background(lipgloss.Color("#2a2b3c"))
-			lineNoStyle = lineNoStyle.Foreground(lipgloss.Color("#878ebf"))
+			lineStyle = lineStyle.Foreground(lipgloss.Color("#878ebf")).Background(lipgloss.Color("#2a2b3c"))
 		}
+		textStyle := lineStyle.Copy().UnsetForeground()
 
 		// Write line numbers
-		lineBuilder.WriteString(lineNoStyle.Render(fmt.Sprintf("%4d  ", lineNo+1)))
+		lineBuilder.WriteString(lineStyle.Render(fmt.Sprintf("%4d  ", lineNo+1)))
 
-		// Now we render the text, then the remaining
+		// Now we render the text, then the remaining space
 		for {
 			done := false
 			r := m.GapBuf.GetAbs(bufIndex)
@@ -275,7 +273,6 @@ func Render(m *Model) tea.Cmd {
 
 				lineBuilder.WriteString(m.Cursor.View())
 			} else {
-				textStyle := sty.Copy().UnsetWidth()
 				lineBuilder.WriteString(textStyle.Render(string(r)))
 			}
 			bufIndex++
@@ -284,7 +281,16 @@ func Render(m *Model) tea.Cmd {
 			}
 		}
 
-		sb.WriteString(sty.Render(lineBuilder.String()))
+		// Render the spaces until viewport end
+		for i := lipgloss.Width(lineBuilder.String()); i < m.viewport.Width; i++ {
+			lineBuilder.WriteString(textStyle.Render(" "))
+		}
+
+		// Limit the width, so no wrapping (for now)
+		sb.WriteString(
+			lipgloss.NewStyle().
+				MaxWidth(m.viewport.Width).
+				Render(lineBuilder.String()))
 		sb.WriteRune('\n')
 	}
 
