@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/Ardelean-Calin/elmo/ui/components/footer"
@@ -92,7 +91,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Window was resized
 	case tea.WindowSizeMsg:
 		m.statusbar.Width = msg.Width
-		log.Printf("Screen size changed - h: %d w: %d", msg.Height, msg.Width)
+		// log.Printf("Screen size changed - h: %d w: %d", msg.Height, msg.Width)
 
 	case tea.KeyMsg:
 		m.footer.Clear()

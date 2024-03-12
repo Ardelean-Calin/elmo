@@ -1,6 +1,8 @@
 package buffer
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -8,21 +10,45 @@ import (
 	"strings"
 
 	"github.com/Ardelean-Calin/elmo/pkg/gapbuffer"
+
 	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/golang"
 )
 
+// Catppuccin Frappe
+var theme = []string{
+	"#303446", // base00
+	"#292c3c", // base01
+	"#414559", // base02
+	"#51576d", // base03
+	"#626880", // base04
+	"#c6d0f5", // base05
+	"#f2d5cf", // base06
+	"#babbf1", // base07
+	"#e78284", // base08
+	"#ef9f76", // base09
+	"#e5c890", // base0A
+	"#a6d189", // base0B
+	"#81c8be", // base0C
+	"#8caaee", // base0D
+	"#ca9ee6", // base0E
+	"#eebebe", // base0F
+}
+
 // Contains the new cursor coordinates
-type UpdateViewportMsg string
+type UpdateViewportMsg []byte
 type LineChangedMsg int
 
 // Model represents an opened file.
 type Model struct {
 	Path     string                    // Absolute path on disk.
 	fd       *os.File                  // File descriptor.
+	Buffer   []byte                    // Contains my file
 	GapBuf   gapbuffer.GapBuffer[rune] // Actual raw text data. Gap Buffer is a nice compromise between Piece Chain and buffer.
 	Lines    gapbuffer.GapBuffer[int]  // The line numbers are also stored in a Gap Buffer
 	Focused  bool
@@ -36,6 +62,8 @@ type Model struct {
 	// A move down or up will try to keep this position
 	CursorPosH int
 	viewport   viewport.Model // Scrollable viewport
+	// TEMPORARY
+	highlights []byte
 }
 
 func New() Model {
@@ -50,6 +78,7 @@ func New() Model {
 		Cursor:     cursor.New(),
 		CursorPos:  0,
 		CursorPosH: 0,
+		highlights: nil,
 	}
 }
 
@@ -68,9 +97,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.viewport = viewport.New(msg.Width, msg.Height-2)
 			m.viewport.YPosition = 0
 			m.ready = true
-			// Clear the default keybinds for up/down using k/j
-			m.viewport.KeyMap.Down = key.NewBinding()
-			m.viewport.KeyMap.Up = key.NewBinding()
+			// Clear the default keybinds
+			m.viewport.KeyMap = New().viewport.KeyMap
 		} else {
 			m.viewport.Height = msg.Height - 2
 			m.viewport.Width = msg.Width
@@ -99,7 +127,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	// Update the viewport content
 	case UpdateViewportMsg:
-		content := string(msg)
+		var sb strings.Builder
+		for i, b := range msg {
+			_ = i
+			sb.WriteString(
+				lipgloss.NewStyle().Foreground(lipgloss.Color(
+					theme[m.highlights[i]],
+				)).Render(string(b)))
+		}
+		content := sb.String()
 		m.viewport.SetContent(content)
 
 	// The current line has changed
@@ -127,7 +163,166 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	// var sb strings.Builder
+	// for _, b := range m.Buffer {
+	// 	sb.WriteByte(b)
+	// }
+
+	// return sb.String()
 	return m.viewport.View()
+}
+
+type Hightlight struct {
+	name      string
+	startByte int
+	endByte   int
+}
+
+type HightlightList []Hightlight
+
+func (h *HightlightList) Find(index int) (int, bool) {
+	for i, v := range *h {
+		if index >= v.startByte && index < v.endByte {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+func loadTreesitter(m *Model, sourceCode []byte) {
+
+	lang := golang.GetLanguage()
+	tree, _ := sitter.ParseCtx(context.Background(), sourceCode, lang)
+
+	highlights, _ := os.ReadFile("highlights.scm")
+	q, err := sitter.NewQuery(highlights, lang)
+	if err != nil {
+		panic(err)
+	}
+	qc := sitter.NewQueryCursor()
+	qc.Exec(q, tree)
+
+	hi := make([]byte, len(sourceCode))
+	for i := range hi {
+		hi[i] = 0x05 // Base05 for the default text color
+	}
+	// Iterate over query results
+	for {
+		m, ok := qc.NextMatch()
+		if !ok {
+			break
+		}
+		// log.Printf("M: %v", m)
+		// Apply predicates filtering
+		m = qc.FilterPredicates(m, sourceCode)
+		for _, c := range m.Captures {
+			name := q.CaptureNameForId(c.Index)
+			b, e := c.Node.StartByte(), c.Node.EndByte()
+			length := int(e - b)
+
+			// The most basic of syntax highlighting!
+			var color uint8
+			switch name {
+			case "comment":
+				color = 0x03
+			case "constant.builtin":
+				color = 0x09
+			case "escape":
+				color = 0x0C
+			case "function":
+				color = 0x0D
+			case "function.method":
+				color = 0x0D
+			case "keyword":
+				color = 0x0E
+			case "number":
+				color = 0x09
+			case "operator":
+				color = 0x0C
+			case "package":
+				color = 0x0D
+			case "punctuation.bracket":
+				color = 0x05
+			case "string":
+				color = 0x0B
+			case "type":
+				color = 0x0A
+			case "variable.member":
+				color = 0x0C
+			default:
+				color = 0x05
+			}
+
+			copy(hi[b:e], bytes.Repeat(
+				[]byte{color},
+				length,
+			))
+
+			// PoC, replace with some map or something
+			// if strings.HasPrefix(name, "comment") {
+			// 	copy(hi[b:e], bytes.Repeat(
+			// 		[]byte{0x03},
+			// 		length,
+			// 	))
+			// } else if strings.HasPrefix(name, "constant") {
+			// 	copy(hi[b:e], bytes.Repeat(
+			// 		[]byte{0x09},
+			// 		length,
+			// 	))
+			// } else if name == "function" {
+			// 	copy(hi[b:e], bytes.Repeat(
+			// 		[]byte{0x0D},
+			// 		length,
+			// 	))
+			// } else if name == "function.method" {
+			// 	copy(hi[b:e], bytes.Repeat(
+			// 		[]byte{0x0D},
+			// 		length,
+			// 	))
+			// } else if strings.HasPrefix(name, "keyword") {
+			// 	copy(hi[b:e], bytes.Repeat(
+			// 		[]byte{0x0E},
+			// 		length,
+			// 	))
+			// 	// } else if strings.HasPrefix(name, "label") {
+			// 	// 	copy(hi[b:e], bytes.Repeat(
+			// 	// 		[]byte{0x0B},
+			// 	// 		length,
+			// 	// 	))
+			// } else if strings.HasPrefix(name, "namespace") {
+			// 	copy(hi[b:e], bytes.Repeat(
+			// 		[]byte{0x0D},
+			// 		length,
+			// 	))
+			// } else if strings.HasPrefix(name, "operator") {
+			// 	copy(hi[b:e], bytes.Repeat(
+			// 		[]byte{0x05},
+			// 		length,
+			// 	))
+			// } else if strings.HasPrefix(name, "punctuation") {
+			// 	copy(hi[b:e], bytes.Repeat(
+			// 		[]byte{0x05},
+			// 		length,
+			// 	))
+			// } else if strings.HasPrefix(name, "string") {
+			// 	copy(hi[b:e], bytes.Repeat(
+			// 		[]byte{0x0B},
+			// 		length,
+			// 	))
+			// } else if strings.HasPrefix(name, "type") {
+			// 	copy(hi[b:e], bytes.Repeat(
+			// 		[]byte{0x0A},
+			// 		length,
+			// 	))
+			// } else if name == "variablem.parameter" || strings.HasPrefix(name, "varaible.other.member") {
+			// 	copy(hi[b:e], bytes.Repeat(
+			// 		[]byte{0x08},
+			// 		length,
+			// 	))
+			// }
+		}
+	}
+	m.highlights = hi
 }
 
 // OpenFile opens the given file inside the buffer
@@ -144,35 +339,18 @@ func (m *Model) OpenFile(path string) (tea.Cmd, error) {
 		}
 	}
 
-	// TODO
-	// Temporary. Until I fix rendering tabs and horizontal positions
-	text := string(bytes)
-	text = strings.ReplaceAll(text, "\t", "    ")
-
-	// Ok by this point I either have a fd with some bytes or a nil fd and nil bytes
-	// Create a gap buffer with the contents of the file
-	content := []rune(text)
-	buf := gapbuffer.NewGapBuffer[rune]()
-	buf.SetContent(content)
-	// And create a gap buffer with all the newline indices. This way I can simply
-	// index the line as line[n] and get the index inside the gap buffer where the n-th line
-	// starts.
-	indices := []int{-1}
-	indices = append(indices, buf.FindAll('\n')...)
-	// Increment the indices so that they point to the line starts
-	for i := range indices {
-		indices[i]++
-	}
-	lineBuf := gapbuffer.NewGapBuffer[int]()
-	lineBuf.SetContent(indices)
+	m.Buffer = bytes
+	// m.viewport.SetContent(string(bytes))
+	loadTreesitter(m, bytes)
 
 	m.Path = path
 	m.fd = fd
-	m.GapBuf = buf
-	m.Lines = lineBuf
 	m.modified = false
+	m.CursorPos = 0
+	m.CursorPosH = 0
+	m.Cursor = cursor.New()
 
-	return Render(m), nil
+	return func() tea.Msg { return UpdateViewportMsg(bytes) }, nil
 }
 
 // Name returns the title of the buffer window to display
@@ -239,9 +417,31 @@ func CursorRight(m *Model, n int) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// Render is the command which renders our viewpoint content to screen
+// Render is the command which builds the text to be rendered.
+// This should be separate from the cursor and line number rendering so that it only updates when needed.
+// Only events such as adding a new character should trigger
+// a re-render
 func Render(m *Model) tea.Cmd {
+	return nil
+	// Render will create a Frame Buffer with all my data
 	var sb strings.Builder
+	// TODO. Change to a byte-buffer based approach which
+	// I then send in the UpdateViewportMsg.
+	// var x bytes.Buffer
+	// Should I use bufio? I can then ReadFrom in the View method
+	// var y bufio.Writer
+
+	// for _, r := range m.GapBuf.Collect() {
+	// 	y.WriteRune(r)
+	// }
+
+	// // Costly operation, only do this once
+	// bufContent := []byte(m.GapBuf.String())
+	// // bytes := []byte(bufContent)
+	// sb.Write(bufContent)
+	// return func() tea.Msg {
+	// 	return UpdateViewportMsg(sb.String())
+	// }
 
 	for lineNo, bufIndex := range m.Lines.Collect() {
 		var lineBuilder strings.Builder
@@ -266,6 +466,28 @@ func Render(m *Model) tea.Cmd {
 				done = true
 			}
 
+			// textStyle.UnsetForeground()
+			// index, ok := m.highlights.Find(bufIndex)
+			// if ok {
+			// 	h := m.highlights[index]
+			// 	// _ = h
+			// 	if strings.HasPrefix(h.name, "string") {
+			// 		textStyle = textStyle.Foreground(lipgloss.Color("#a6d189"))
+			// 	} else if strings.HasPrefix(h.name, "comment") {
+			// 		textStyle = textStyle.Foreground(lipgloss.Color("#626880"))
+			// 	} else if strings.HasPrefix(h.name, "keyword") {
+			// 		textStyle = textStyle.Foreground(lipgloss.Color("#ca9ee6"))
+			// 	} else if strings.HasPrefix(h.name, "variable") {
+			// 		textStyle = textStyle.Foreground(lipgloss.Color("#81c8be"))
+			// 	} else if strings.HasPrefix(h.name, "operator") || strings.HasPrefix(h.name, "punctuation") {
+			// 		textStyle = textStyle.Foreground(lipgloss.Color("#c6d0f5"))
+			// 	} else if strings.HasPrefix(h.name, "constant") {
+			// 		textStyle = textStyle.Foreground(lipgloss.Color("#ef9f76"))
+			// 	} else if strings.HasPrefix(h.name, "type") {
+			// 		textStyle = textStyle.Foreground(lipgloss.Color("#e5c890"))
+			// 	}
+			// }
+
 			// Render cursor
 			if bufIndex == m.CursorPos {
 				m.Cursor.Focus()
@@ -281,15 +503,10 @@ func Render(m *Model) tea.Cmd {
 			}
 		}
 
-		// Render the spaces until viewport end
-		for i := lipgloss.Width(lineBuilder.String()); i < m.viewport.Width; i++ {
-			lineBuilder.WriteString(textStyle.Render(" "))
-		}
-
 		// Limit the width, so no wrapping (for now)
 		sb.WriteString(
 			lipgloss.NewStyle().
-				MaxWidth(m.viewport.Width).
+				Width(m.viewport.Width).
 				Render(lineBuilder.String()))
 		sb.WriteRune('\n')
 	}

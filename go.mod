@@ -6,6 +6,7 @@ require (
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/lipgloss v0.10.0
+	github.com/smacker/go-tree-sitter v0.0.0-20240214120134-1f283e24f560
 )
 
 require (
