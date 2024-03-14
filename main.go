@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Ardelean-Calin/elmo/messages"
 	"github.com/Ardelean-Calin/elmo/ui/components/footer"
 	"github.com/Ardelean-Calin/elmo/ui/components/statusbar"
 	"github.com/Ardelean-Calin/elmo/ui/components/textarea"
@@ -60,6 +61,12 @@ func initialModel() Model {
 		statusbar:   statusbar.New(),
 		footer:      footer.New(),
 		currentMode: Normal,
+	}
+}
+
+func ShowError(err error) tea.Cmd {
+	return func() tea.Msg {
+		return DisplayErrorMsg(err.Error())
 	}
 }
 
@@ -179,8 +186,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	// Handle errors
-	case DisplayErrorMsg:
+	case messages.ShowErrorMsg:
 		m.footer.ShowError(string(msg))
+	case messages.ShowStatusMsg:
+		m.footer.ShowStatus(string(msg))
 	}
 	cmds = append(cmds, cmd)
 
@@ -195,7 +204,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) View() string {
 	return lipgloss.JoinVertical(
-		lipgloss.Left,
+		lipgloss.Top,
 		m.textarea.View(),
 		m.statusbar.View(),
 		m.footer.View())

@@ -24,7 +24,7 @@ func New() Model {
 		focused:    false,
 		error:      "",
 		status:     "",
-		errorStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("#ff0000")),
+		errorStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("#e78284")),
 		cursor:     cursor,
 	}
 }
