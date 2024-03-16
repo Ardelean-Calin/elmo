@@ -1,16 +1,19 @@
 package buffer
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	_ "embed"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path"
 	"strings"
 
 	"github.com/Ardelean-Calin/elmo/commands"
+	"github.com/Ardelean-Calin/elmo/messages"
 	"github.com/Ardelean-Calin/elmo/pkg/gapbuffer"
 
 	"github.com/charmbracelet/bubbles/cursor"
@@ -44,22 +47,28 @@ var theme = []string{
 // Contains the new cursor coordinates
 type UpdateViewportMsg int
 type LineChangedMsg int
+
+// A new syntax tree is available and needs to be rendered
 type TreeReloadMsg struct {
 	tree   *sitter.Node
-	colors []byte
+	colors io.ReadSeeker
 }
 
 // SourceCode is the main container for the opened files. TODO name to something more generic, like Buffer?
 type SourceCode struct {
-	// Stores the raw data bytes. To be replaced with gapbuffer
-	data []byte
-	// Stores the colors for each byte. To be replaced with gapbuffer
-	colors []byte
+	// Stores the raw data bytes. Since I use a readseeker, the underlying
+	// implementation can even be a GapBuffer for all I know.
+	data io.ReadSeeker
+	// Stores the total file length in bytes
+	length int
+	// Stores the colors for each byte. Since I use a readseeker, the underlying
+	// implementation can even be a GapBuffer for all I know.
+	colors io.ReadSeeker
 	// Cursor index
 	cursor int
 	// Treesitter representation
 	tree *sitter.Node
-	//
+	// Encodes information about each line
 	lines map[int]LineInfo
 }
 
@@ -71,7 +80,7 @@ type LineInfo struct {
 }
 
 // SetSource loads a file and computes the appropriate LineInfo's
-func (s *SourceCode) SetSource(source []byte) {
+func (s *SourceCode) SetSource(source io.ReadSeeker) error {
 	lines := make(map[int]LineInfo)
 	i := 0
 	prevLine := -1
@@ -82,7 +91,15 @@ func (s *SourceCode) SetSource(source []byte) {
 		end:         0,
 		indentation: 0,
 	}
-	for _, b := range source {
+
+	// Wrap the reader in a bufio so that it provides ReadByte
+	br := bufio.NewReader(source)
+	for {
+		b, err := br.ReadByte()
+		if err != nil {
+			break
+		}
+
 		if prevLine != currentLine {
 			foundChar = false
 			lineInfo.start = i
@@ -108,20 +125,40 @@ func (s *SourceCode) SetSource(source []byte) {
 		i++
 	}
 
+	colors := bytes.NewReader(bytes.Repeat([]byte{0x05}, i+1))
+
 	s.data = source
-	s.colors = bytes.Repeat([]byte{0x05}, len(source))
+	s.length = i + 1
+	s.colors = colors
 	s.cursor = 0
 	s.tree = nil
 	s.lines = lines
+
+	return nil
 }
 
 // GetSlice returns the slice between start and end
 func (s *SourceCode) GetSlice(start, end int) []byte {
-	return s.data[start:end]
+	buf := make([]byte, end-start)
+	s.data.Seek(int64(start), 0)
+	_, err := s.data.Read(buf)
+
+	if err != nil {
+		log.Panicf("Error when reading file slice with start: %d and end %d", start, end)
+	}
+	return buf
 }
 
 func (s *SourceCode) GetColors(start, end int) []byte {
-	return s.colors[start:end]
+	buf := make([]byte, end-start)
+	s.colors.Seek(int64(start), 0)
+
+	_, err := s.colors.Read(buf)
+	if err != nil {
+		log.Panicf("Error when reading color slice with start: %d and end %d", start, end)
+	}
+
+	return buf
 }
 
 // Returns a map of type lineIndex: {start in buffer, end in buffer}
@@ -272,6 +309,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 // View renders the Buffer content to screen
 func (m Model) View() string {
+	if m.source == nil {
+		return lipgloss.NewStyle().Width(m.viewport.width).Height(m.viewport.height).Render("")
+	}
+
 	var sb strings.Builder
 	start := m.viewport.offset
 	end := m.viewport.offset + m.viewport.height
@@ -312,10 +353,23 @@ var highlightsGo []byte
 func GenerateSyntaxTree(sourceCode *SourceCode) tea.Cmd {
 	return func() tea.Msg {
 		// Prepare the colors. One for each byte!
-		colors := bytes.Repeat([]byte{0x05}, len(sourceCode.data))
+		colors := bytes.Repeat([]byte{0x05}, sourceCode.length)
 
 		lang := golang.GetLanguage()
-		tree, _ := sitter.ParseCtx(context.Background(), sourceCode.data, lang)
+
+		// Unfortunately for treesitter we need to conver the source
+		// into a byte slice. Good thing is, this will only happen once,
+		// I think. When the tree is generated. Ulterior edits might make
+		// use of treesitter's incremental parsing
+		sourceCode.data.Seek(0, 0)
+		data, err := io.ReadAll(sourceCode.data)
+
+		if err != nil {
+			return messages.ShowErrorMsg(err.Error())
+		}
+
+		// Parse works, ParseCtx doesn't. Very weird...
+		tree, _ := sitter.ParseCtx(context.Background(), data, lang)
 
 		q, err := sitter.NewQuery(highlightsGo, lang)
 		if err != nil {
@@ -330,9 +384,9 @@ func GenerateSyntaxTree(sourceCode *SourceCode) tea.Cmd {
 			if !ok {
 				break
 			}
-			// log.Printf("M: %v", m)
+
 			// Apply predicates filtering
-			m = qc.FilterPredicates(m, sourceCode.data)
+			m = qc.FilterPredicates(m, data)
 			for _, c := range m.Captures {
 				name := q.CaptureNameForId(c.Index)
 				// noRunes := utf8.RuneCount(sourceCode[b:e])
@@ -379,7 +433,7 @@ func GenerateSyntaxTree(sourceCode *SourceCode) tea.Cmd {
 		// Save the current tree and syntax highlighting
 		return TreeReloadMsg{
 			tree:   tree,
-			colors: colors,
+			colors: bytes.NewReader(colors),
 		}
 	}
 }
@@ -393,25 +447,21 @@ func (m *Model) OpenFile(path string) tea.Cmd {
 		return commands.ShowError(err)
 	}
 
-	content, err := io.ReadAll(fd)
-	if err != nil {
+	// Close the previous file
+	m.fd.Close()
+	source := SourceCode{}
+	if err := source.SetSource(fd); err != nil {
 		return commands.ShowError(err)
 	}
 
-	source := SourceCode{}
-	source.SetSource(content)
-
 	m.source = &source
+	m.viewport.offset = 0
 	m.Path = path
 	m.fd = fd
 	m.modified = false
 	m.CursorPos = 0
 	m.CurrentRow = 0
 	m.highlights = nil
-	cursor := cursor.New()
-	// cursor.SetChar(string(m.Buffer[0][0]))
-	cursor.Focus()
-	m.Cursor = cursor
 
 	return tea.Batch(
 		UpdateViewport,
