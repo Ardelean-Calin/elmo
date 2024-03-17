@@ -2,6 +2,8 @@ module github.com/Ardelean-Calin/elmo
 
 go 1.21.7
 
+replace github.com/smacker/go-tree-sitter => ../oss/go-tree-sitter
+
 require (
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.25.0
