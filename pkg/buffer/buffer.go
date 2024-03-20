@@ -132,18 +132,20 @@ type Model struct {
 	ready bool
 	//  Then, the cursor will be strictly for display only (see footer.go)
 	// TEMPORARY
-	source   *SourceCode // This replaces everything below
-	viewport Viewport    // Scrollable viewport
+	source    *SourceCode // This replaces everything below
+	viewport  Viewport    // Scrollable viewport
+	selection [2]int      // 2 indices for the currently selected text
 }
 
 func New() Model {
 	return Model{
-		Path:     "",
-		fd:       nil,
-		Focused:  true,
-		modified: false,
-		ready:    false,
-		source:   nil,
+		Path:      "",
+		fd:        nil,
+		Focused:   true,
+		modified:  false,
+		ready:     false,
+		source:    nil,
+		selection: [2]int{0, 0},
 	}
 }
 
@@ -193,7 +195,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 	case tea.MouseMsg:
-		switch msg.Button {
+		evt, action := msg.Button, msg.Action
+		switch evt {
 		// Scroll the viewport with the mouse wheel
 		case tea.MouseButtonWheelUp:
 			m.viewport.offset = clamp(m.viewport.offset-3, 0, len(m.source.lines)-m.viewport.height+2)
@@ -222,6 +225,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 
 			m.source.cursor = clamp(line.start+pos, line.start, line.end+1)
+			if action == tea.MouseActionPress {
+				// Start selection => save selection start to a variable
+				m.selection[0] = m.source.cursor
+			}
+			m.selection[1] = m.source.cursor
 		}
 
 	// A new syntax tree has been generated
@@ -255,12 +263,31 @@ func (m Model) View() string {
 		// Write line numbers
 		numberStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme[0x02]))
 		sb.WriteString(numberStyle.Render(fmt.Sprintf("%5d  ", i+1)))
+		// TODO: Also render the Git Gutter here using these: ▔ ▍
 
+		// Render the cursor and the selection (TODO)
+		var fg, bg lipgloss.Color
 		for j, b := range line {
-			if m.source.cursor == lineinfo.start+j {
+			absolutePos := lineinfo.start + j
+			if m.source.cursor == absolutePos {
 				sb.WriteString(lipgloss.NewStyle().Reverse(true).Render(string(b)))
 			} else {
-				sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(theme[colors[j]])).Render(string(b)))
+				fg = lipgloss.Color(theme[colors[j]])
+				// Normal render. All characters are rendered one-by-one
+				// with their appropriate color
+				selStart := min(m.selection[0], m.selection[1])
+				selEnd := max(m.selection[0], m.selection[1])
+				if absolutePos < selEnd && absolutePos >= selStart {
+					bg = lipgloss.Color(theme[0x02])
+				} else {
+					bg = lipgloss.Color(theme[0x00])
+				}
+
+				sb.WriteString(
+					lipgloss.NewStyle().
+						Foreground(fg).
+						Background(bg).
+						Render(string(b)))
 			}
 		}
 		// If the cursor is on a line end (aka \n), render a whitespace
@@ -323,14 +350,13 @@ func GenerateSyntaxTree(sourceCode *SourceCode, ext string) tea.Cmd {
 			if !ok {
 				break
 			}
-			// log.Printf("M: %v", m)
 			// Apply predicates filtering
 			m = qc.FilterPredicates(m, sourceCode.data)
 			for _, c := range m.Captures {
 				name := q.CaptureNameForId(c.Index)
-				// noRunes := utf8.RuneCount(sourceCode[b:e])
 
 				// The most basic of syntax highlighting!
+				// TODO. Load these associations from a file
 				var color uint8
 				switch name {
 				case "attribute":
@@ -341,7 +367,7 @@ func GenerateSyntaxTree(sourceCode *SourceCode, ext string) tea.Cmd {
 					color = 0x09
 				case "escape":
 					color = 0x0C
-				case "function", "function.method", "function.macro":
+				case "function", "function.builtin", "function.method", "function.macro":
 					color = 0x0D
 				case "keyword":
 					color = 0x0E
@@ -357,7 +383,7 @@ func GenerateSyntaxTree(sourceCode *SourceCode, ext string) tea.Cmd {
 					color = 0x0D
 				case "punctuation.bracket":
 					color = 0x05
-				case "string":
+				case "string", "string.special.path", "string.special.uri":
 					color = 0x0B
 				case "type", "type.builtin":
 					color = 0x0A
