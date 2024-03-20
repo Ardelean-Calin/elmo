@@ -23,24 +23,24 @@ import (
 	"github.com/smacker/go-tree-sitter/rust"
 )
 
-// Catppuccin Frappe
+// Catppuccin Mocha
 var theme = []string{
-	"#303446", // base00
-	"#292c3c", // base01
-	"#414559", // base02
-	"#51576d", // base03
-	"#626880", // base04
-	"#c6d0f5", // base05
-	"#f2d5cf", // base06
-	"#babbf1", // base07
-	"#e78284", // base08
-	"#ef9f76", // base09
-	"#e5c890", // base0A
-	"#a6d189", // base0B
-	"#81c8be", // base0C
-	"#8caaee", // base0D
-	"#ca9ee6", // base0E
-	"#eebebe", // base0F
+	"#1e1e2e", // base
+	"#181825", // mantle
+	"#313244", // surface0
+	"#45475a", // surface1
+	"#585b70", // surface2
+	"#cdd6f4", // text
+	"#f5e0dc", // rosewater
+	"#b4befe", // lavender
+	"#f38ba8", // red
+	"#fab387", // peach
+	"#f9e2af", // yellow
+	"#a6e3a1", // green
+	"#94e2d5", // teal
+	"#89b4fa", // blue
+	"#cba6f7", // mauve
+	"#f2cdcd", // flamingo
 }
 
 // Contains the new cursor coordinates
@@ -203,7 +203,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case tea.MouseButtonWheelDown:
 			m.viewport.offset = clamp(m.viewport.offset+3, 0, len(m.source.lines)-m.viewport.height+2)
 		case tea.MouseButtonLeft:
-			x, y := msg.X-6, msg.Y // Allocate 6 for the lineinfo
+			x, y := msg.X-7, msg.Y // Allocate 7 for the line numbers + gutter
 			row := m.viewport.offset + y
 			line := m.source.lines[row]
 
@@ -218,7 +218,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					x -= 1
 				}
 
-				if x <= 0 {
+				if x < 0 {
 					break
 				}
 				pos += 1
@@ -256,21 +256,23 @@ func (m Model) View() string {
 	start := clamp(m.viewport.offset, 0, len(m.source.lines))
 	end := clamp(m.viewport.offset+m.viewport.height, 0, len(m.source.lines))
 	for i := start; i < end; i++ {
+		var lb strings.Builder
+		var fg, bg lipgloss.Color
+
 		lineinfo := m.source.lines[i]
 		line := m.source.GetSlice(lineinfo.start, lineinfo.end)
 		colors := m.source.GetColors(lineinfo.start, lineinfo.end)
 
 		// Write line numbers
-		numberStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme[0x02]))
-		sb.WriteString(numberStyle.Render(fmt.Sprintf("%5d  ", i+1)))
+		numberStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme[0x03])).Background(lipgloss.Color(theme[0x00]))
+		lb.WriteString(numberStyle.Render(fmt.Sprintf("%5d  ", i+1)))
 		// TODO: Also render the Git Gutter here using these: ▔ ▍
 
-		// Render the cursor and the selection (TODO)
-		var fg, bg lipgloss.Color
+		// Render the cursor and the selection
 		for j, b := range line {
 			absolutePos := lineinfo.start + j
 			if m.source.cursor == absolutePos {
-				sb.WriteString(lipgloss.NewStyle().Reverse(true).Render(string(b)))
+				lb.WriteString(lipgloss.NewStyle().Reverse(true).Render(string(b)))
 			} else {
 				fg = lipgloss.Color(theme[colors[j]])
 				// Normal render. All characters are rendered one-by-one
@@ -283,24 +285,32 @@ func (m Model) View() string {
 					bg = lipgloss.Color(theme[0x00])
 				}
 
-				sb.WriteString(
+				lb.WriteString(
 					lipgloss.NewStyle().
 						Foreground(fg).
 						Background(bg).
 						Render(string(b)))
 			}
 		}
+
 		// If the cursor is on a line end (aka \n), render a whitespace
 		if m.source.cursor == lineinfo.end {
-			sb.WriteString(lipgloss.NewStyle().Reverse(true).Render(" "))
+			lb.WriteString(lipgloss.NewStyle().Reverse(true).Render(" "))
 		}
+
+		// Render the background
+		bg = lipgloss.Color(theme[0x00])
+		textLen := lipgloss.Width(lb.String())
+		lb.WriteString(lipgloss.NewStyle().Background(bg).Width(m.viewport.width - textLen).Render(" "))
 
 		// Last character in the viewport needs not be a newline, or
 		// I will get a weird empty line at the end
 		if i < end-1 {
-			sb.WriteByte('\n')
+			lb.WriteByte('\n')
 		}
 
+		// Finally write the line to the framebuffer
+		sb.WriteString(lb.String())
 	}
 	return sb.String()
 }
@@ -362,7 +372,7 @@ func GenerateSyntaxTree(sourceCode *SourceCode, ext string) tea.Cmd {
 				case "attribute":
 					color = 0x0E
 				case "comment":
-					color = 0x03
+					color = 0x04
 				case "constant.builtin":
 					color = 0x09
 				case "escape":
