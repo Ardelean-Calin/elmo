@@ -67,9 +67,8 @@ type SourceCode struct {
 
 // LineInfo describes a line. Using this I can easily index lines and get their length and indentation
 type LineInfo struct {
-	start       int
-	end         int
-	indentation int
+	start int
+	end   int
 }
 
 // SetSource loads a file and computes the appropriate LineInfo's
@@ -78,28 +77,15 @@ func (s *SourceCode) SetSource(source []byte) {
 	i := 0
 	prevLine := -1
 	currentLine := 0
-	foundChar := false
 	lineInfo := LineInfo{
-		start:       0,
-		end:         0,
-		indentation: 0,
+		start: 0,
+		end:   0,
 	}
 	for _, b := range source {
 		if prevLine != currentLine {
-			foundChar = false
 			lineInfo.start = i
 			lineInfo.end = i
-			lineInfo.indentation = 0
 			prevLine = currentLine
-		}
-
-		// Calculate the indentation by counting the number of space characters
-		if b == '\t' && !foundChar {
-			lineInfo.indentation += 4
-		} else if b == ' ' && !foundChar {
-			lineInfo.indentation++
-		} else {
-			foundChar = true
 		}
 
 		if b == '\n' {
@@ -214,15 +200,27 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case tea.MouseButtonWheelDown:
 			m.viewport.offset = clamp(m.viewport.offset+3, 0, len(m.source.lines)-m.viewport.height+2)
 		case tea.MouseButtonLeft:
-			x, y := msg.X-6, msg.Y
+			x, y := msg.X-6, msg.Y // Allocate 6 for the lineinfo
 			row := m.viewport.offset + y
 			line := m.source.lines[row]
-			var pos int
-			if line.indentation > 0 {
-				pos = min(x, line.indentation)/4 + clamp(x-line.indentation, 0, line.end)
-			} else {
-				pos = x
+
+			// Handle line indentation when rendering by mapping the
+			// x coordinate of the mouse click to a line offset iteratively
+			pos := 0
+			for i := line.start; i < line.end; i++ {
+				c := m.source.data[i]
+				if c == '\t' {
+					x -= 4
+				} else {
+					x -= 1
+				}
+
+				if x <= 0 {
+					break
+				}
+				pos += 1
 			}
+
 			m.source.cursor = clamp(line.start+pos, line.start, line.end+1)
 		}
 
@@ -247,8 +245,8 @@ func (m Model) View() string {
 	}
 
 	var sb strings.Builder
-	start := m.viewport.offset
-	end := m.viewport.offset + m.viewport.height
+	start := clamp(m.viewport.offset, 0, len(m.source.lines))
+	end := clamp(m.viewport.offset+m.viewport.height, 0, len(m.source.lines))
 	for i := start; i < end; i++ {
 		lineinfo := m.source.lines[i]
 		line := m.source.GetSlice(lineinfo.start, lineinfo.end)
@@ -256,7 +254,7 @@ func (m Model) View() string {
 
 		// Write line numbers
 		numberStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme[0x02]))
-		sb.WriteString(numberStyle.Render(fmt.Sprintf("%4d  ", i+1)))
+		sb.WriteString(numberStyle.Render(fmt.Sprintf("%5d  ", i+1)))
 
 		for j, b := range line {
 			if m.source.cursor == lineinfo.start+j {
