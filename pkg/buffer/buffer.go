@@ -12,7 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Ardelean-Calin/elmo/commands"
+	"github.com/Ardelean-Calin/elmo/pkg/gapbuffer"
+	"github.com/Ardelean-Calin/elmo/ui/components/footer"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -54,7 +55,7 @@ type TreeReloadMsg struct {
 // SourceCode is the main container for the opened files. TODO name to something more generic, like Buffer?
 type SourceCode struct {
 	// Stores the raw data bytes. To be replaced with gapbuffer
-	data []byte
+	data gapbuffer.GapBuffer[byte]
 	// Contains a base16 color for each character
 	colors []byte
 	// Cursor index
@@ -96,7 +97,10 @@ func (s *SourceCode) SetSource(source []byte) {
 		i++
 	}
 
-	s.data = source
+	buf := gapbuffer.NewGapBuffer[byte]()
+	buf.SetContent(source)
+
+	s.data = buf
 	s.colors = bytes.Repeat([]byte{0x05}, len(source))
 	s.cursor = 0
 	s.tree = nil
@@ -105,7 +109,7 @@ func (s *SourceCode) SetSource(source []byte) {
 
 // GetSlice returns the slice between start and end
 func (s *SourceCode) GetSlice(start, end int) []byte {
-	return s.data[start:end]
+	return s.data.Collect()[start:end]
 }
 
 func (s *SourceCode) GetColors(start, end int) []byte {
@@ -122,6 +126,15 @@ type Viewport struct {
 	width, height int
 }
 
+// Stores editor mode
+type Mode int
+
+const (
+	Normal Mode = iota
+	Insert
+	Select
+)
+
 // Model represents an opened file.
 type Model struct {
 	Path     string   // Absolute path on disk.
@@ -135,6 +148,7 @@ type Model struct {
 	source    *SourceCode // This replaces everything below
 	viewport  Viewport    // Scrollable viewport
 	selection [2]int      // 2 indices for the currently selected text
+	Mode      Mode        // Current buffer mode
 }
 
 func New() Model {
@@ -144,6 +158,7 @@ func New() Model {
 		Focused:   true,
 		modified:  false,
 		ready:     false,
+		Mode:      Normal,
 		source:    nil,
 		selection: [2]int{0, 0},
 	}
@@ -171,26 +186,45 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
-		// Half page up
-		if msg.String() == "ctrl+u" {
-			m.viewport.offset = clamp(m.viewport.offset-m.viewport.height/2, 0, len(m.source.lines)-m.viewport.height+2)
-		}
-		// Half page down
-		if msg.String() == "ctrl+d" {
-			m.viewport.offset = clamp(m.viewport.offset+m.viewport.height/2, 0, len(m.source.lines)-m.viewport.height+2)
-		}
-		// TODO: Normal mode, insert mode, etc.
-		if msg.String() == "j" {
-			m.source.cursorDown(1)
-		}
-		if msg.String() == "k" {
-			m.source.cursorUp(1)
-		}
-		if msg.String() == "l" {
-			m.source.cursorRight(1)
-		}
-		if msg.String() == "h" {
-			m.source.cursorLeft(1)
+		// Normal mode keybindings
+		if m.Mode == Normal {
+			// Half page up
+			if msg.String() == "ctrl+u" {
+				m.viewport.offset = clamp(m.viewport.offset-m.viewport.height/2, 0, len(m.source.lines)-m.viewport.height+2)
+			}
+			// Half page down
+			if msg.String() == "ctrl+d" {
+				m.viewport.offset = clamp(m.viewport.offset+m.viewport.height/2, 0, len(m.source.lines)-m.viewport.height+2)
+			}
+
+			// TODO: Normal mode, insert mode, etc.
+			if msg.String() == "j" {
+				m.source.cursorDown(1)
+			}
+			if msg.String() == "k" {
+				m.source.cursorUp(1)
+			}
+			if msg.String() == "l" {
+				m.source.cursorRight(1)
+			}
+			if msg.String() == "h" {
+				m.source.cursorLeft(1)
+			}
+			if msg.String() == "i" {
+				m.Mode = Insert
+				m.source.data.CursorGoto(m.source.cursor)
+			}
+		} else if m.Mode == Insert {
+			if msg.String() == "esc" {
+				m.Mode = Normal
+			}
+
+			if msg.Alt == false && msg.Type == tea.KeyRunes {
+				m.source.data.InsertSlice([]byte(msg.String()))
+				cmd = footer.ShowStatus(fmt.Sprintf("Key: %s", msg.String()))
+				// TODO Invalidate treesitter & Schedule a treesitter regeneration 100-200ms into the future
+			}
+
 		}
 		cmds = append(cmds, cmd)
 
@@ -211,7 +245,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			// x coordinate of the mouse click to a line offset iteratively
 			pos := 0
 			for i := line.start; i < line.end; i++ {
-				c := m.source.data[i]
+				c := m.source.data.GetAbs(i)
 				if c == '\t' {
 					x -= 4
 				} else {
@@ -237,7 +271,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.source.colors = msg.colors
 		m.source.tree = msg.tree
 		// Issue a viewport update
-		cmds = append(cmds, UpdateViewport, commands.ShowStatus("Treesitter loaded successfully"))
+		cmds = append(cmds, UpdateViewport, footer.ShowStatus("Treesitter loaded successfully"))
 	}
 
 	return m, tea.Batch(cmds...)
@@ -263,7 +297,7 @@ func (m Model) View() string {
 		line := m.source.GetSlice(lineinfo.start, lineinfo.end)
 		colors := m.source.GetColors(lineinfo.start, lineinfo.end)
 
-		// Write line numbers
+		// Write line numbers TODO I could maybe move this inside another component?
 		numberStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme[0x03])).Background(lipgloss.Color(theme[0x00]))
 		lb.WriteString(numberStyle.Render(fmt.Sprintf("%5d  ", i+1)))
 		// TODO: Also render the Git Gutter here using these: ▔ ▍
@@ -329,7 +363,7 @@ var highlightsNix []byte
 func GenerateSyntaxTree(sourceCode *SourceCode, ext string) tea.Cmd {
 	return func() tea.Msg {
 		// Prepare the colors. One for each byte!
-		colors := bytes.Repeat([]byte{0x05}, len(sourceCode.data))
+		colors := bytes.Repeat([]byte{0x05}, sourceCode.data.Len())
 
 		var lang *sitter.Language
 		var highlights []byte
@@ -343,9 +377,10 @@ func GenerateSyntaxTree(sourceCode *SourceCode, ext string) tea.Cmd {
 			lang = nix.GetLanguage()
 			highlights = highlightsNix
 		} else {
-			log.Panicf("Unsupported language: %s", ext)
+			log.Printf("[Treesitter] Unsupported language: %s", ext)
+			return nil
 		}
-		tree, _ := sitter.ParseCtx(context.Background(), sourceCode.data, lang)
+		tree, _ := sitter.ParseCtx(context.Background(), sourceCode.data.Collect(), lang)
 
 		q, err := sitter.NewQuery(highlights, lang)
 		if err != nil {
@@ -361,7 +396,7 @@ func GenerateSyntaxTree(sourceCode *SourceCode, ext string) tea.Cmd {
 				break
 			}
 			// Apply predicates filtering
-			m = qc.FilterPredicates(m, sourceCode.data)
+			m = qc.FilterPredicates(m, sourceCode.data.Collect())
 			for _, c := range m.Captures {
 				name := q.CaptureNameForId(c.Index)
 
@@ -425,12 +460,12 @@ func (m *Model) OpenFile(path string) tea.Cmd {
 	// taken from helix
 	fd, err := os.OpenFile(path, os.O_RDWR, 0664)
 	if err != nil {
-		return commands.ShowError(err)
+		return footer.ShowError(err)
 	}
 
 	content, err := io.ReadAll(fd)
 	if err != nil {
-		return commands.ShowError(err)
+		return footer.ShowError(err)
 	}
 	extension := filepath.Ext(path)
 
@@ -462,11 +497,11 @@ func (source *SourceCode) cursorUp(n int) {
 }
 
 func (source *SourceCode) cursorLeft(n int) {
-	source.cursor = clamp(source.cursor-n, 0, len(source.data))
+	source.cursor = clamp(source.cursor-n, 0, source.data.Len())
 }
 
 func (source *SourceCode) cursorRight(n int) {
-	source.cursor = clamp(source.cursor+n, 0, len(source.data))
+	source.cursor = clamp(source.cursor+n, 0, source.data.Len())
 }
 
 func UpdateViewport() tea.Msg {

@@ -20,20 +20,6 @@ func Event(T any) tea.Cmd {
 	}
 }
 
-// Return a status string. Will be displayed in the statusbar
-func StatusCmd(status string) tea.Cmd {
-	return func() tea.Msg {
-		return StatusMsg(status)
-	}
-}
-
-// Return an error. Will be displayed in the statusbar
-func ErrorCmd(err error) tea.Cmd {
-	return func() tea.Msg {
-		return ErrorMsg(err)
-	}
-}
-
 type Model struct {
 	Height, Width int          // Size of the textarea
 	Focused       bool         // If focused, we react to events
@@ -72,9 +58,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.Width, m.Height = msg.Width, msg.Height-2
 	}
-	if m.Buffer.Focused {
-		m.Buffer, cmd = m.Buffer.Update(msg)
-	}
+	m.Buffer, cmd = m.Buffer.Update(msg)
 
 	return m, cmd
 }

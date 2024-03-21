@@ -7,7 +7,7 @@ import (
 
 // Comparable is a custom interface that both int and rune satisfy.
 type Comparable interface {
-	~int | ~rune
+	~int | ~rune | ~byte
 }
 
 // Gap Buffer implementation. See: https://routley.io/posts/gap-buffer
@@ -108,14 +108,9 @@ func (b *GapBuffer[T]) growGap() {
 	b.GapEnd = b.GapStart + gapSize
 }
 
-// Count returns the size of the raw text, excluding the gap
-func (b *GapBuffer[T]) Count() int {
-	return len(b.Buffer) - b.gapSize()
-}
-
-// Len returns the total length of the gap buffer, including gap
+// Len returns the total length of the gap buffer, excluding gap
 func (b *GapBuffer[T]) Len() int {
-	return len(b.Buffer)
+	return len(b.Buffer) - b.gapSize()
 }
 
 // TotalLen returns the total length of the gap buffer (including gaps)
@@ -284,7 +279,7 @@ type GapBufferIterator[T Comparable] struct {
 }
 
 func (gi *GapBufferIterator[T]) HasNext() bool {
-	return gi.index < gi.gb.Count()
+	return gi.index < gi.gb.Len()
 }
 
 func (gi *GapBufferIterator[T]) Next() (int, T) {

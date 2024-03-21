@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Ardelean-Calin/elmo/messages"
 	"github.com/Ardelean-Calin/elmo/ui/components/footer"
 	"github.com/Ardelean-Calin/elmo/ui/components/statusbar"
 	"github.com/Ardelean-Calin/elmo/ui/components/textarea"
@@ -64,18 +63,6 @@ func initialModel() Model {
 	}
 }
 
-func ShowError(err error) tea.Cmd {
-	return func() tea.Msg {
-		return DisplayErrorMsg(err.Error())
-	}
-}
-
-func ErrorCmd(errorMessage string) tea.Cmd {
-	return func() tea.Msg {
-		return DisplayErrorMsg(errorMessage)
-	}
-}
-
 func OpenBufferCmd(path string) tea.Cmd {
 	return func() tea.Msg {
 		return OpenBufferMsg(path)
@@ -98,7 +85,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Window was resized
 	case tea.WindowSizeMsg:
 		m.statusbar.Width = msg.Width
-		// log.Printf("Screen size changed - h: %d w: %d", msg.Height, msg.Width)
 
 	case tea.KeyMsg:
 		m.footer.Clear()
@@ -150,14 +136,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case textarea.BufSwitchedMsg:
 		m.statusbar.SetOpenBuffer(m.textarea.CurBufPath())
 
-	// Received an error
-	case textarea.ErrorMsg:
-		m.footer.ShowError(msg.Error())
-
-	// Received a status message
-	case textarea.StatusMsg:
-		m.footer.ShowStatus(string(msg))
-
 	// An "open a new buffer" message was received
 	case OpenBufferMsg:
 		path := string(msg)
@@ -185,11 +163,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.footer.Focus()
 		}
 
-	// Handle errors
-	case messages.ShowErrorMsg:
-		m.footer.ShowError(string(msg))
-	case messages.ShowStatusMsg:
-		m.footer.ShowStatus(string(msg))
 	}
 	cmds = append(cmds, cmd)
 
@@ -231,12 +204,12 @@ func ParseAction(action ActionInterface) tea.Cmd {
 	switch command {
 	case "o", "open":
 		if arguments == nil {
-			return ErrorCmd("Please specify a path to open.")
+			return footer.ShowError(fmt.Errorf("Please specify a path to open."))
 		}
 		return func() tea.Msg { return OpenBufferMsg(arguments[0]) }
 	case "q", "quit":
 		if arguments != nil {
-			return ErrorCmd(":quit takes no arguments.")
+			return footer.ShowError(fmt.Errorf("'quit' takes no arguments."))
 		}
 		return tea.Quit
 	case "bc", "buffer-close":

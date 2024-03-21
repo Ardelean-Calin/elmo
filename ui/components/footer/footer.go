@@ -57,9 +57,6 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
-	if !m.focused {
-		return m, nil
-	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -79,8 +76,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.text += " "
 		case tea.KeyRunes:
 			cmd = nil
-			m.text += string(msg.Runes)
+			if m.focused == true {
+				m.text += string(msg.Runes)
+			}
 		}
+
+	case StatusMsg:
+		m.status = string(msg)
+
+	case ErrorMsg:
+		m.error = string(msg)
 	}
 	return m, cmd
 }
