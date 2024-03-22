@@ -10,7 +10,7 @@ func TestBasic(t *testing.T) {
 	is := is.New(t)
 
 	content := []byte("Hello")
-	buf := NewGapBuffer[byte]()
+	buf := NewGapBuffer()
 	buf.SetContent(content)
 
 	is.Equal(buf.String(), "Hello")
@@ -25,7 +25,7 @@ func TestCursor(t *testing.T) {
 	is := is.New(t)
 
 	content := []byte("HelloWorld!")
-	b := NewGapBuffer[byte]()
+	b := NewGapBuffer()
 	b.SetContent(content)
 	want := "Hello, World. My name is Calin."
 
@@ -52,9 +52,9 @@ func TestCursor(t *testing.T) {
 func TestCursorBounds(t *testing.T) {
 	is := is.New(t)
 
-	b := NewGapBuffer[rune]()
+	b := NewGapBuffer()
 	b.CursorLeft()
-	b.InsertSlice([]rune("Oi!"))
+	b.InsertSlice([]byte("Oi!"))
 
 	want := "Oi!"
 	is.Equal(b.String(), want)
@@ -67,29 +67,29 @@ func TestCursorBounds(t *testing.T) {
 	b.CursorLeft()
 	b.CursorLeft()
 	b.CursorLeft()
-	b.InsertSlice([]rune("1) "))
+	b.InsertSlice([]byte("1) "))
 
 	want = "1) Oi!"
 	is.Equal(b.String(), want)
 }
 
-func TestRuneAt(t *testing.T) {
+func TestByteAt(t *testing.T) {
 	is := is.New(t)
 
-	b := NewGapBuffer[rune]()
-	b.SetContent([]rune("Test"))
+	b := NewGapBuffer()
+	b.SetContent([]byte("Test"))
 
-	is.Equal(b.GetAbs(0), 'T')
-	is.Equal(b.GetAbs(1), 'e')
-	is.Equal(b.GetAbs(2), 's')
-	is.Equal(b.GetAbs(3), 't')
+	is.Equal(b.GetAbs(0), byte('T'))
+	is.Equal(b.GetAbs(1), byte('e'))
+	is.Equal(b.GetAbs(2), byte('s'))
+	is.Equal(b.GetAbs(3), byte('t'))
 }
 
 func TestDelete(t *testing.T) {
 	is := is.New(t)
 
-	b := NewGapBuffer[int]() // {1*, 2, 3, 4}    se
-	b.SetContent([]int{1, 2, 3, 4})
+	b := NewGapBuffer() // {1*, 2, 3, 4}    se
+	b.SetContent([]byte{1, 2, 3, 4})
 	is.Equal(b.GapStart, 0)
 	is.Equal(b.GapEnd, 0)
 
@@ -105,7 +105,7 @@ func TestDelete(t *testing.T) {
 	is.Equal(b.GapStart, 0)
 	is.Equal(b.GapEnd, 2)
 
-	want := []int{3, 4}
-	got := b.Collect()
+	want := []byte{3, 4}
+	got := b.Bytes()
 	is.Equal(got, want)
 }

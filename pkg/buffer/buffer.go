@@ -47,21 +47,24 @@ var theme = []string{
 // Contains the new cursor coordinates
 type UpdateViewportMsg int
 type LineChangedMsg int
-type TreeReloadMsg struct {
-	tree   *sitter.Node
-	colors []byte
+type TreeInitMsg struct {
+	tree    *sitter.Node
+	lang    *sitter.Language
+	queries *sitter.Query
 }
 
 // SourceCode is the main container for the opened files. TODO name to something more generic, like Buffer?
 type SourceCode struct {
 	// Stores the raw data bytes. To be replaced with gapbuffer
-	data gapbuffer.GapBuffer[byte]
+	data gapbuffer.GapBuffer
 	// Contains a base16 color for each character
 	colors []byte
 	// Cursor index
 	cursor int
 	// Treesitter representation
-	tree *sitter.Node
+	tree    *sitter.Node
+	lang    *sitter.Language
+	queries *sitter.Query
 	//
 	lines map[int]LineInfo
 }
@@ -74,7 +77,7 @@ type LineInfo struct {
 
 // SetSource loads a file and computes the appropriate LineInfo's
 func (s *SourceCode) SetSource(source []byte) {
-	buf := gapbuffer.NewGapBuffer[byte]()
+	buf := gapbuffer.NewGapBuffer()
 	buf.SetContent(source)
 
 	s.data = buf
@@ -82,6 +85,85 @@ func (s *SourceCode) SetSource(source []byte) {
 	s.cursor = 0
 	s.tree = nil
 	s.RegenerateLines()
+}
+
+func (s *SourceCode) GenerateTree() *sitter.Node {
+	newTree, _ := sitter.ParseCtx(context.Background(), s.data.Bytes(), s.lang)
+
+	return newTree
+}
+
+// GenerateColors generates the new Syntax Highlighting for the current
+// tree. It is a blocking operation that should take as little as possible.
+func (s *SourceCode) GenerateColors() []byte {
+	srcBytes, err := io.ReadAll(s.data.Reader())
+	if err != nil {
+		log.Panic(err)
+	}
+	colors := bytes.Repeat([]byte{0x05}, len(srcBytes))
+
+	qc := sitter.NewQueryCursor()
+	qc.Exec(s.queries, s.tree)
+
+	// Iterate over query results
+	for {
+		m, ok := qc.NextMatch()
+		if !ok {
+			break
+		}
+		// Apply predicates filtering
+		m = qc.FilterPredicates(m, srcBytes)
+		for _, c := range m.Captures {
+			name := s.queries.CaptureNameForId(c.Index)
+
+			// The most basic of syntax highlighting!
+			// TODO. Load these associations from a file
+			var color uint8
+			switch name {
+			case "attribute":
+				color = 0x0E
+			case "comment":
+				color = 0x04
+			case "constant.builtin":
+				color = 0x09
+			case "escape":
+				color = 0x0C
+			case "function", "function.builtin", "function.method", "function.macro":
+				color = 0x0D
+			case "keyword":
+				color = 0x0E
+			case "label":
+				color = 0x0C
+			case "number":
+				color = 0x09
+			case "operator":
+				color = 0x0C
+			case "package":
+				color = 0x0D
+			case "property":
+				color = 0x0D
+			case "punctuation.bracket":
+				color = 0x05
+			case "string", "string.special.path", "string.special.uri":
+				color = 0x0B
+			case "type", "type.builtin":
+				color = 0x0A
+			case "variable.member":
+				color = 0x0C
+			case "variable.parameter":
+				color = 0x08
+			default:
+				color = 0x05
+			}
+
+			for index := c.Node.StartByte(); index < c.Node.EndByte(); index++ {
+				colors[index] = color
+			}
+
+		}
+	}
+
+	return colors
 }
 
 // RegenerateLines regenerates the line information
@@ -106,7 +188,7 @@ func (s *SourceCode) RegenerateLines() {
 
 // GetSlice returns the slice between start and end
 func (s *SourceCode) GetSlice(start, end int) []byte {
-	return s.data.Collect()[start:end]
+	return s.data.Bytes()[start:end]
 }
 
 func (s *SourceCode) GetColors(start, end int) []byte {
@@ -194,19 +276,19 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.viewport.offset = clamp(m.viewport.offset+m.viewport.height/2, 0, len(m.source.lines)-m.viewport.height+2)
 			}
 
-			// TODO: Normal mode, insert mode, etc.
 			if msg.String() == "j" {
 				m.source.cursorDown(1)
 			}
 			if msg.String() == "k" {
 				m.source.cursorUp(1)
 			}
-			if msg.String() == "l" {
+			if msg.String() == "l" || msg.String() == "right" {
 				m.source.cursorRight(1)
 			}
-			if msg.String() == "h" {
+			if msg.String() == "h" || msg.String() == "left" {
 				m.source.cursorLeft(1)
 			}
+
 			if msg.String() == "i" {
 				m.Mode = Insert
 				m.source.data.CursorGoto(m.source.cursor)
@@ -222,31 +304,51 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.source.data.InsertSlice(chars)
 				m.source.cursor += len(chars)
 				m.source.RegenerateLines()
-				cmd = GenerateSyntaxTree(m.source, ".go")
-				// TODO Invalidate treesitter & Schedule a treesitter regeneration 100-200ms into the future
 			}
 
 			if msg.Type == tea.KeySpace {
 				m.source.data.Insert(' ')
 				m.source.cursor++
 				m.source.RegenerateLines()
-				cmd = GenerateSyntaxTree(m.source, ".go")
+			}
+
+			if msg.Type == tea.KeyTab {
+				m.source.data.Insert('\t')
+				m.source.cursor++
+				m.source.RegenerateLines()
 			}
 
 			if msg.Type == tea.KeyEnter {
 				m.source.data.Insert('\n')
 				m.source.cursor++
 				m.source.RegenerateLines()
-				cmd = GenerateSyntaxTree(m.source, ".go")
 			}
 
 			if msg.Type == tea.KeyBackspace {
 				m.source.data.Backspace()
 				m.source.cursor--
 				m.source.RegenerateLines()
-				cmd = GenerateSyntaxTree(m.source, ".go")
 			}
 
+			if msg.Type == tea.KeyDelete {
+				m.source.data.Delete()
+				m.source.RegenerateLines()
+			}
+
+			if msg.Type == tea.KeyRight {
+				m.source.cursor++
+				m.source.data.CursorRight()
+			}
+
+			if msg.Type == tea.KeyLeft {
+				m.source.cursor--
+				m.source.data.CursorLeft()
+			}
+
+			// Blocking operations. Why? Because we don't want the screen
+			// to flicker.
+			m.source.tree = m.source.GenerateTree()
+			m.source.colors = m.source.GenerateColors()
 		}
 		cmds = append(cmds, cmd)
 
@@ -281,6 +383,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 
 			m.source.cursor = clamp(line.start+pos, line.start, line.end+1)
+			m.source.data.CursorGoto(m.source.cursor)
 			if action == tea.MouseActionPress {
 				// Start selection => save selection start to a variable
 				m.selection[0] = m.source.cursor
@@ -288,12 +391,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.selection[1] = m.source.cursor
 		}
 
-	// A new syntax tree has been generated
-	case TreeReloadMsg:
-		m.source.colors = msg.colors
+	// A new syntax tree has been generated. Only invoked once on file load
+	case TreeInitMsg:
 		m.source.tree = msg.tree
-		// Issue a viewport update
-		cmds = append(cmds, UpdateViewport, footer.ShowStatus("Treesitter loaded successfully"))
+		m.source.lang = msg.lang
+		m.source.queries = msg.queries
+		// Generate the syntax highlighting
+		m.source.colors = m.source.GenerateColors()
 	}
 
 	return m, tea.Batch(cmds...)
@@ -380,13 +484,10 @@ var highlightsRust []byte
 //go:embed syntax/nix/highlights.scm
 var highlightsNix []byte
 
-// GenerateSyntaxTree parses the source code using treesitter and generates
+// InitTree parses the source code using treesitter and generates
 // a syntax tree for it.
-func GenerateSyntaxTree(sourceCode *SourceCode, ext string) tea.Cmd {
+func InitTree(sourceCode *SourceCode, ext string) tea.Cmd {
 	return func() tea.Msg {
-		// Prepare the colors. One for each byte!
-		colors := bytes.Repeat([]byte{0x05}, sourceCode.data.Len())
-
 		var lang *sitter.Language
 		var highlights []byte
 		if ext == ".go" {
@@ -402,76 +503,18 @@ func GenerateSyntaxTree(sourceCode *SourceCode, ext string) tea.Cmd {
 			log.Printf("[Treesitter] Unsupported language: %s", ext)
 			return nil
 		}
-		tree, _ := sitter.ParseCtx(context.Background(), sourceCode.data.Collect(), lang)
+		tree, _ := sitter.ParseCtx(context.Background(), sourceCode.data.Bytes(), lang)
 
 		q, err := sitter.NewQuery(highlights, lang)
 		if err != nil {
 			log.Panic(err)
 		}
-		qc := sitter.NewQueryCursor()
-		qc.Exec(q, tree)
 
-		// Iterate over query results
-		for {
-			m, ok := qc.NextMatch()
-			if !ok {
-				break
-			}
-			// Apply predicates filtering
-			m = qc.FilterPredicates(m, sourceCode.data.Collect())
-			for _, c := range m.Captures {
-				name := q.CaptureNameForId(c.Index)
-
-				// The most basic of syntax highlighting!
-				// TODO. Load these associations from a file
-				var color uint8
-				switch name {
-				case "attribute":
-					color = 0x0E
-				case "comment":
-					color = 0x04
-				case "constant.builtin":
-					color = 0x09
-				case "escape":
-					color = 0x0C
-				case "function", "function.builtin", "function.method", "function.macro":
-					color = 0x0D
-				case "keyword":
-					color = 0x0E
-				case "label":
-					color = 0x0C
-				case "number":
-					color = 0x09
-				case "operator":
-					color = 0x0C
-				case "package":
-					color = 0x0D
-				case "property":
-					color = 0x0D
-				case "punctuation.bracket":
-					color = 0x05
-				case "string", "string.special.path", "string.special.uri":
-					color = 0x0B
-				case "type", "type.builtin":
-					color = 0x0A
-				case "variable.member":
-					color = 0x0C
-				case "variable.parameter":
-					color = 0x08
-				default:
-					color = 0x05
-				}
-
-				for index := c.Node.StartByte(); index < c.Node.EndByte(); index++ {
-					colors[index] = color
-				}
-
-			}
-		}
 		// Save the current tree and syntax highlighting
-		return TreeReloadMsg{
-			tree:   tree,
-			colors: colors,
+		return TreeInitMsg{
+			tree:    tree,
+			lang:    lang,
+			queries: q,
 		}
 	}
 }
@@ -502,7 +545,7 @@ func (m *Model) OpenFile(path string) tea.Cmd {
 
 	return tea.Batch(
 		UpdateViewport,
-		GenerateSyntaxTree(&source, extension))
+		InitTree(&source, extension))
 
 }
 

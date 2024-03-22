@@ -215,6 +215,8 @@ func ParseAction(action ActionInterface) tea.Cmd {
 	case "bc", "buffer-close":
 		// Can close multiple buffers by just specifying the buffer name
 		return CloseBuffers(arguments...)
+	default:
+		return footer.ShowError(fmt.Errorf("Unrecognized command: '%s'", command))
 	}
 
 	return nil
