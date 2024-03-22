@@ -74,29 +74,6 @@ type LineInfo struct {
 
 // SetSource loads a file and computes the appropriate LineInfo's
 func (s *SourceCode) SetSource(source []byte) {
-	lines := make(map[int]LineInfo)
-	i := 0
-	prevLine := -1
-	currentLine := 0
-	lineInfo := LineInfo{
-		start: 0,
-		end:   0,
-	}
-	for _, b := range source {
-		if prevLine != currentLine {
-			lineInfo.start = i
-			lineInfo.end = i
-			prevLine = currentLine
-		}
-
-		if b == '\n' {
-			lineInfo.end = i
-			lines[currentLine] = lineInfo
-			currentLine++
-		}
-		i++
-	}
-
 	buf := gapbuffer.NewGapBuffer[byte]()
 	buf.SetContent(source)
 
@@ -104,6 +81,26 @@ func (s *SourceCode) SetSource(source []byte) {
 	s.colors = bytes.Repeat([]byte{0x05}, len(source))
 	s.cursor = 0
 	s.tree = nil
+	s.RegenerateLines()
+}
+
+// RegenerateLines regenerates the line information
+func (s *SourceCode) RegenerateLines() {
+	lines := make(map[int]LineInfo)
+
+	lineBreaks := s.data.FindAll('\n')
+	lines[0] = LineInfo{0, lineBreaks[0]}
+
+	for i, index := range lineBreaks {
+		if i == len(lineBreaks)-1 {
+			lines[i+1] = LineInfo{index + 1, s.data.Len()}
+			break
+		}
+		// Since the range is [open, closed) we consider a line to be starting at the first
+		// character after '\n' and ending at the last character before '\n'
+		lines[i+1] = LineInfo{index + 1, lineBreaks[i+1]}
+	}
+
 	s.lines = lines
 }
 
@@ -214,15 +211,40 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.Mode = Insert
 				m.source.data.CursorGoto(m.source.cursor)
 			}
-		} else if m.Mode == Insert {
+		} else if m.Mode == Insert && msg.Alt == false {
 			if msg.String() == "esc" {
 				m.Mode = Normal
+				cmd = nil
 			}
 
-			if msg.Alt == false && msg.Type == tea.KeyRunes {
-				m.source.data.InsertSlice([]byte(msg.String()))
-				cmd = footer.ShowStatus(fmt.Sprintf("Key: %s", msg.String()))
+			if msg.Type == tea.KeyRunes {
+				chars := []byte(msg.String())
+				m.source.data.InsertSlice(chars)
+				m.source.cursor += len(chars)
+				m.source.RegenerateLines()
+				cmd = GenerateSyntaxTree(m.source, ".go")
 				// TODO Invalidate treesitter & Schedule a treesitter regeneration 100-200ms into the future
+			}
+
+			if msg.Type == tea.KeySpace {
+				m.source.data.Insert(' ')
+				m.source.cursor++
+				m.source.RegenerateLines()
+				cmd = GenerateSyntaxTree(m.source, ".go")
+			}
+
+			if msg.Type == tea.KeyEnter {
+				m.source.data.Insert('\n')
+				m.source.cursor++
+				m.source.RegenerateLines()
+				cmd = GenerateSyntaxTree(m.source, ".go")
+			}
+
+			if msg.Type == tea.KeyBackspace {
+				m.source.data.Backspace()
+				m.source.cursor--
+				m.source.RegenerateLines()
+				cmd = GenerateSyntaxTree(m.source, ".go")
 			}
 
 		}
@@ -333,9 +355,9 @@ func (m Model) View() string {
 		}
 
 		// Render the background
-		bg = lipgloss.Color(theme[0x00])
-		textLen := lipgloss.Width(lb.String())
-		lb.WriteString(lipgloss.NewStyle().Background(bg).Width(m.viewport.width - textLen).Render(" "))
+		// bg = lipgloss.Color(theme[0x00])
+		// textLen := lipgloss.Width(lb.String())
+		// lb.WriteString(lipgloss.NewStyle().Background(bg).Width(m.viewport.width - textLen).Render(" "))
 
 		// Last character in the viewport needs not be a newline, or
 		// I will get a weird empty line at the end

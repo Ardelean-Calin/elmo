@@ -9,14 +9,14 @@ import (
 func TestBasic(t *testing.T) {
 	is := is.New(t)
 
-	content := []rune("Hello")
-	buf := NewGapBuffer[rune]()
+	content := []byte("Hello")
+	buf := NewGapBuffer[byte]()
 	buf.SetContent(content)
 
 	is.Equal(buf.String(), "Hello")
 	is.Equal(buf.TotalLen(), 5)
 
-	buf.InsertSlice([]rune("Boo! "))
+	buf.InsertSlice([]byte("Boo! "))
 	is.Equal(buf.String(), "Boo! Hello")
 	is.Equal(buf.TotalLen(), 10)
 }
@@ -24,8 +24,8 @@ func TestBasic(t *testing.T) {
 func TestCursor(t *testing.T) {
 	is := is.New(t)
 
-	content := []rune("HelloWorld!")
-	b := NewGapBuffer[rune]()
+	content := []byte("HelloWorld!")
+	b := NewGapBuffer[byte]()
 	b.SetContent(content)
 	want := "Hello, World. My name is Calin."
 
@@ -44,7 +44,7 @@ func TestCursor(t *testing.T) {
 	b.CursorRight()
 	b.Delete()
 	b.Insert('.')
-	b.InsertSlice([]rune(" My name is Calin."))
+	b.InsertSlice([]byte(" My name is Calin."))
 
 	is.Equal(b.String(), want)
 }
