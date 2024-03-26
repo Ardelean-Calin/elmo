@@ -323,6 +323,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				cmd = ClearSelection
 			}
 
+			if msg.String() == "d" {
+				m.source.data.CursorGoto(m.source.cursor)
+				m.source.data.Delete()
+				m.source.RegenerateLines()
+				m.source.tree = m.source.GenerateTree()
+				m.source.colors = m.source.GenerateColors()
+			}
+
 			if msg.String() == "i" {
 				m.Mode = Insert
 				m.source.data.CursorGoto(m.source.cursor)
@@ -512,6 +520,28 @@ func (m Model) View() string {
 		sb.WriteString(lb.String())
 	}
 	return sb.String()
+}
+
+// WriteToDisk saves the current buffer to disk
+func (b *Model) WriteToDisk() tea.Cmd {
+	if b.fd == nil {
+		return footer.ShowError(fmt.Errorf("Error writing to disk."))
+	}
+
+	_, err := b.fd.Seek(0, 0)
+	if err != nil {
+		return footer.ShowError(err)
+	}
+
+	_, err = b.fd.Write(b.source.data.Bytes())
+	if err != nil {
+		return footer.ShowError(err)
+	}
+
+	return footer.ShowStatus(fmt.Sprintf("'%s' written, %dL, %dB",
+		b.Path,
+		len(b.source.lines),
+		len(b.source.data.Bytes())))
 }
 
 //go:embed syntax/go/highlights.scm

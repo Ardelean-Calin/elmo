@@ -124,10 +124,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// An action such as open, write, etc.
 	// We process the action and switch the mode
 	case footer.SubmitMsg:
-		cmd = tea.Batch(
-			ParseAction(msg),
-			SwitchMode(Normal),
-		)
+		action := msg
+		command, arguments := action.Decode()
+
+		switch command {
+		case "o", "open":
+			if arguments == nil {
+				cmd = footer.ShowError(fmt.Errorf("Please specify a path to open."))
+			}
+			cmd = func() tea.Msg { return OpenBufferMsg(arguments[0]) }
+		case "q", "quit":
+			if arguments != nil {
+				cmd = footer.ShowError(fmt.Errorf("'quit' takes no arguments."))
+			}
+			cmd = tea.Quit
+		case "bc", "buffer-close":
+			// Can close multiple buffers by just specifying the buffer name
+			cmd = CloseBuffers(arguments...)
+		case "w", "write":
+			cmd = m.textarea.Buffer.WriteToDisk()
+		default:
+			cmd = footer.ShowError(fmt.Errorf("Unrecognized command: '%s'", command))
+		}
+
+		cmds = append(cmds, cmd, SwitchMode(Normal))
 
 	case footer.CancelMsg:
 		cmd = SwitchMode(Normal)
@@ -195,29 +215,6 @@ func CloseBuffers(buffers ...string) tea.Cmd {
 
 type ActionInterface interface {
 	Decode() (string, []string)
-}
-
-// ParseAction parses the given user command and arguments and does stuff.
-func ParseAction(action ActionInterface) tea.Cmd {
-	command, arguments := action.Decode()
-
-	switch command {
-	case "o", "open":
-		if arguments == nil {
-			return footer.ShowError(fmt.Errorf("Please specify a path to open."))
-		}
-		return func() tea.Msg { return OpenBufferMsg(arguments[0]) }
-	case "q", "quit":
-		if arguments != nil {
-			return footer.ShowError(fmt.Errorf("'quit' takes no arguments."))
-		}
-		return tea.Quit
-	case "bc", "buffer-close":
-		// Can close multiple buffers by just specifying the buffer name
-		return CloseBuffers(arguments...)
-	default:
-		return footer.ShowError(fmt.Errorf("Unrecognized command: '%s'", command))
-	}
 }
 
 func main() {
