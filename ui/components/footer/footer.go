@@ -62,6 +62,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyEnter:
+			if !m.focused {
+				return m, nil
+			}
 			cmd = Submit(m.text)
 			m.text = ""
 		case tea.KeyEscape:

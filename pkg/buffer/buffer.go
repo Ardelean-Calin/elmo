@@ -45,13 +45,13 @@ var theme = []string{
 }
 
 // Contains the new cursor coordinates
-type UpdateViewportMsg int
-type LineChangedMsg int
 type TreeInitMsg struct {
 	tree    *sitter.Node
 	lang    *sitter.Language
 	queries *sitter.Query
 }
+
+type ClearSelectionMsg bool
 
 // SourceCode is the main container for the opened files. TODO name to something more generic, like Buffer?
 type SourceCode struct {
@@ -61,18 +61,47 @@ type SourceCode struct {
 	colors []byte
 	// Cursor index
 	cursor int
+	// Horizontal position within line
+	hpos int
 	// Treesitter representation
 	tree    *sitter.Node
 	lang    *sitter.Language
 	queries *sitter.Query
-	//
-	lines map[int]LineInfo
+	// Info about every single line
+	lines map[int]Line
 }
 
-// LineInfo describes a line. Using this I can easily index lines and get their length and indentation
-type LineInfo struct {
+// CurrentLine returns the current line index and value
+func (s *SourceCode) CurrentLine() (int, Line, error) {
+	c := s.cursor
+	for i, v := range s.lines {
+		if v.start <= c && c <= v.end {
+			return i, v, nil
+		}
+	}
+
+	return -1, Line{}, fmt.Errorf("Could not find index %d", c)
+}
+
+// Line describes a line. Using this I can easily index lines and get their length and indentation
+type Line struct {
 	start int
 	end   int
+}
+
+// Returns the width, in characters, of a given line
+func (s *SourceCode) LineWidth(l Line) int {
+	width := 0
+	for i := l.start; i < l.end; i++ {
+		if s.data.GetAbs(i) == '\t' {
+			// TODO: Replace 4 with configurable value
+			width += 4
+		} else {
+			width += 1
+		}
+	}
+
+	return width
 }
 
 // SetSource loads a file and computes the appropriate LineInfo's
@@ -83,6 +112,7 @@ func (s *SourceCode) SetSource(source []byte) {
 	s.data = buf
 	s.colors = bytes.Repeat([]byte{0x05}, len(source))
 	s.cursor = 0
+	s.hpos = 0
 	s.tree = nil
 	s.RegenerateLines()
 }
@@ -168,19 +198,19 @@ func (s *SourceCode) GenerateColors() []byte {
 
 // RegenerateLines regenerates the line information
 func (s *SourceCode) RegenerateLines() {
-	lines := make(map[int]LineInfo)
+	lines := make(map[int]Line)
 
 	lineBreaks := s.data.FindAll('\n')
-	lines[0] = LineInfo{0, lineBreaks[0]}
+	lines[0] = Line{0, lineBreaks[0]}
 
 	for i, index := range lineBreaks {
 		if i == len(lineBreaks)-1 {
-			lines[i+1] = LineInfo{index + 1, s.data.Len()}
+			lines[i+1] = Line{index + 1, s.data.Len()}
 			break
 		}
 		// Since the range is [open, closed) we consider a line to be starting at the first
 		// character after '\n' and ending at the last character before '\n'
-		lines[i+1] = LineInfo{index + 1, lineBreaks[i+1]}
+		lines[i+1] = Line{index + 1, lineBreaks[i+1]}
 	}
 
 	s.lines = lines
@@ -196,7 +226,7 @@ func (s *SourceCode) GetColors(start, end int) []byte {
 }
 
 // Returns a map of type lineIndex: {start in buffer, end in buffer}
-func (s *SourceCode) Lines() map[int]LineInfo {
+func (s *SourceCode) Lines() map[int]Line {
 	return s.lines
 }
 
@@ -276,17 +306,21 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.viewport.offset = clamp(m.viewport.offset+m.viewport.height/2, 0, len(m.source.lines)-m.viewport.height+2)
 			}
 
-			if msg.String() == "j" {
+			if msg.String() == "j" || msg.String() == "down" {
 				m.source.cursorDown(1)
+				cmd = ClearSelection
 			}
-			if msg.String() == "k" {
+			if msg.String() == "k" || msg.String() == "up" {
 				m.source.cursorUp(1)
+				cmd = ClearSelection
 			}
 			if msg.String() == "l" || msg.String() == "right" {
 				m.source.cursorRight(1)
+				cmd = ClearSelection
 			}
 			if msg.String() == "h" || msg.String() == "left" {
 				m.source.cursorLeft(1)
+				cmd = ClearSelection
 			}
 
 			if msg.String() == "i" {
@@ -383,6 +417,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 
 			m.source.cursor = clamp(line.start+pos, line.start, line.end+1)
+			m.source.hpos = clamp(msg.X-7, 0, m.source.LineWidth(line)+1)
 			m.source.data.CursorGoto(m.source.cursor)
 			if action == tea.MouseActionPress {
 				// Start selection => save selection start to a variable
@@ -398,6 +433,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.source.queries = msg.queries
 		// Generate the syntax highlighting
 		m.source.colors = m.source.GenerateColors()
+
+	case ClearSelectionMsg:
+		m.selection[0] = m.source.cursor
+		m.selection[1] = m.source.cursor
 	}
 
 	return m, tea.Batch(cmds...)
@@ -544,7 +583,6 @@ func (m *Model) OpenFile(path string) tea.Cmd {
 	m.modified = false
 
 	return tea.Batch(
-		UpdateViewport,
 		InitTree(&source, extension))
 
 }
@@ -556,21 +594,95 @@ func (b Model) Name() string {
 }
 
 func (source *SourceCode) cursorDown(n int) {
+	index, _, _ := source.CurrentLine()
+
+	nextIndex := clamp(index+n, 0, len(source.lines))
+	nextLine := source.lines[nextIndex]
+
+	// Remembers the cursor horizontal position
+	x := 0
+	i := 0
+	for i < nextLine.end-nextLine.start {
+		char := source.data.GetAbs(nextLine.start + i)
+		if char == '\t' {
+			x += 4
+		} else {
+			x += 1
+		}
+
+		if x > source.hpos {
+			break
+		}
+
+		i++
+	}
+
+	// If the horizontal position exceeds the line length, limit ourselves to the line length
+	source.cursor = clamp(nextLine.start+i, nextLine.start, nextLine.end+1)
+
 }
 
 func (source *SourceCode) cursorUp(n int) {
+	index, _, _ := source.CurrentLine()
+
+	nextIndex := clamp(index-n, 0, len(source.lines))
+	nextLine := source.lines[nextIndex]
+
+	// Remembers the cursor horizontal position
+	x := 0
+	i := 0
+	for i < nextLine.end-nextLine.start {
+		char := source.data.GetAbs(nextLine.start + i)
+		if char == '\t' {
+			x += 4
+		} else {
+			x += 1
+		}
+
+		if x > source.hpos {
+			break
+		}
+
+		i++
+	}
+
+	// If the horizontal position exceeds the line length, limit ourselves to the line length
+	source.cursor = clamp(nextLine.start+i, nextLine.start, nextLine.end+1)
 }
 
 func (source *SourceCode) cursorLeft(n int) {
 	source.cursor = clamp(source.cursor-n, 0, source.data.Len())
+	// Step 1: Calculate the current line
+	_, line, _ := source.CurrentLine()
+	// Step 2: Inside this line, calculate a horizontal position
+	hpos := 0
+	for i := line.start; i < source.cursor; i++ {
+		if source.data.GetAbs(i) == '\t' {
+			hpos += 4
+		} else {
+			hpos += 1
+		}
+	}
+	// Step 3: Set the horizontal position
+	source.hpos = hpos
 }
 
 func (source *SourceCode) cursorRight(n int) {
 	source.cursor = clamp(source.cursor+n, 0, source.data.Len())
-}
+	// Step 1: Calculate the current line
+	_, line, _ := source.CurrentLine()
+	// Step 2: Inside this line, calculate a horizontal position
+	hpos := 0
+	for i := line.start; i < source.cursor; i++ {
+		if source.data.GetAbs(i) == '\t' {
+			hpos += 4
+		} else {
+			hpos += 1
+		}
+	}
+	// Step 3: Set the horizontal position
+	source.hpos = hpos
 
-func UpdateViewport() tea.Msg {
-	return UpdateViewportMsg(0)
 }
 
 // clamp limits the value of val between [low, high)

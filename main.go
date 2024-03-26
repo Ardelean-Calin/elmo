@@ -218,8 +218,6 @@ func ParseAction(action ActionInterface) tea.Cmd {
 	default:
 		return footer.ShowError(fmt.Errorf("Unrecognized command: '%s'", command))
 	}
-
-	return nil
 }
 
 func main() {
