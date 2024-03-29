@@ -243,8 +243,12 @@ func (gb *GapBuffer) Delete() {
 	gb.GapEnd++
 }
 
-func (gb *GapBuffer) DeleteRange() {
+func (gb *GapBuffer) DeleteRange(length int) {
+	if gb.GapEnd == len(gb.Buffer) {
+		return
+	}
 
+	gb.GapEnd = clamp(gb.GapEnd+length, 0, len(gb.Buffer))
 }
 
 // Backspace deletes the character before the current position
